@@ -1,0 +1,227 @@
+@import "tailwindcss";
+
+/* ─── CSS Variables: Dark (default) ─── */
+:root {
+  --bg-base: #0a0b0f;
+  --bg-card: #111318;
+  --bg-card-hover: #161820;
+  --bg-sidebar: #0d0e13;
+  --bg-input: #13141a;
+  --bg-overlay: rgba(10, 11, 15, 0.85);
+
+  --border-subtle: rgba(255, 255, 255, 0.07);
+  --border-default: rgba(255, 255, 255, 0.1);
+  --border-strong: rgba(255, 255, 255, 0.18);
+
+  --text-primary: rgba(255, 255, 255, 0.95);
+  --text-secondary: rgba(255, 255, 255, 0.5);
+  --text-tertiary: rgba(255, 255, 255, 0.3);
+  --text-placeholder: rgba(255, 255, 255, 0.2);
+
+  --accent: #1B1097;
+  --accent-glow: rgba(27, 16, 151, 0.35);
+  --accent-border: rgba(27, 16, 151, 0.6);
+
+  --shadow-card: 0 1px 3px rgba(0,0,0,0.4), 0 8px 24px rgba(0,0,0,0.3);
+  --shadow-elevated: 0 4px 12px rgba(0,0,0,0.5), 0 24px 48px rgba(0,0,0,0.4);
+
+  --glass-bg: rgba(255, 255, 255, 0.04);
+  --glass-border: rgba(255, 255, 255, 0.08);
+  --glass-blur: blur(16px);
+
+  --nav-pill-bg: rgba(255, 255, 255, 0.05);
+  --nav-pill-border: rgba(255, 255, 255, 0.09);
+  --nav-pill-shadow: 0 2px 12px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.06);
+
+  --scrollbar-thumb: rgba(255,255,255,0.1);
+  --scrollbar-thumb-hover: rgba(255,255,255,0.2);
+}
+
+/* ─── CSS Variables: Light ─── */
+[data-theme="light"] {
+  --bg-base: #f2f3f7;
+  --bg-card: #ffffff;
+  --bg-card-hover: #f9fafb;
+  --bg-sidebar: #f7f8fc;
+  --bg-input: #f4f5f9;
+  --bg-overlay: rgba(242, 243, 247, 0.85);
+
+  --border-subtle: rgba(0, 0, 0, 0.05);
+  --border-default: rgba(0, 0, 0, 0.09);
+  --border-strong: rgba(0, 0, 0, 0.15);
+
+  --text-primary: rgba(10, 12, 20, 0.95);
+  --text-secondary: rgba(10, 12, 20, 0.5);
+  --text-tertiary: rgba(10, 12, 20, 0.35);
+  --text-placeholder: rgba(10, 12, 20, 0.25);
+
+  --accent: #4CABF6;
+  --accent-glow: rgba(76, 171, 246, 0.2);
+  --accent-border: rgba(76, 171, 246, 0.5);
+
+  --shadow-card: 0 1px 3px rgba(0,0,0,0.08), 0 4px 16px rgba(0,0,0,0.06);
+  --shadow-elevated: 0 4px 12px rgba(0,0,0,0.1), 0 16px 32px rgba(0,0,0,0.08);
+
+  --glass-bg: rgba(255, 255, 255, 0.7);
+  --glass-border: rgba(0, 0, 0, 0.08);
+  --glass-blur: blur(16px);
+
+  --nav-pill-bg: rgba(255, 255, 255, 0.75);
+  --nav-pill-border: rgba(0, 0, 0, 0.09);
+  --nav-pill-shadow: 0 2px 12px rgba(0,0,0,0.08), inset 0 1px 0 rgba(255,255,255,0.9);
+
+  --scrollbar-thumb: rgba(0,0,0,0.12);
+  --scrollbar-thumb-hover: rgba(0,0,0,0.22);
+}
+
+/* ─── Base Reset ─── */
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  background-color: var(--bg-base);
+  color: var(--text-primary);
+  font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans-serif;
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+/* ─── Scrollbar ─── */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover { background: var(--scrollbar-thumb-hover); }
+
+/* ─── Snap Scroll (Landing) ─── */
+.snap-container {
+  height: 100vh;
+  overflow-y: scroll;
+  scroll-snap-type: y mandatory;
+  scroll-behavior: smooth;
+}
+.snap-section {
+  scroll-snap-align: start;
+  scroll-snap-stop: always;
+  min-height: 100vh;
+}
+
+/* ─── Glow effects ─── */
+.glow-accent {
+  background: radial-gradient(ellipse 60% 40% at 50% 50%, var(--accent-glow), transparent 70%);
+}
+
+/* ─── Glass morphism ─── */
+.glass {
+  background: var(--glass-bg);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--glass-border);
+}
+
+/* ─── Nav Pill ─── */
+.nav-pill {
+  background: var(--nav-pill-bg);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid var(--nav-pill-border);
+  box-shadow: var(--nav-pill-shadow);
+}
+
+/* ─── Transitions ─── */
+.transition-theme {
+  transition: background-color 0.25s ease, border-color 0.25s ease, color 0.25s ease, box-shadow 0.25s ease;
+}
+
+/* ─── Card hover ─── */
+.card-hover {
+  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+}
+.card-hover:hover {
+  transform: translateY(-3px);
+  box-shadow: var(--shadow-elevated);
+}
+
+/* ─── Image grid mask ─── */
+.img-mask::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(to top, rgba(0,0,0,0.6), transparent 50%);
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+.img-mask:hover::after { opacity: 1; }
+
+/* ─── Modal animations ─── */
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(20px) scale(0.97); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+.animate-fade-in { animation: fadeIn 0.2s ease forwards; }
+.animate-slide-up { animation: slideUp 0.25s ease forwards; }
+
+/* ─── Gradient text ─── */
+.gradient-text {
+  background: linear-gradient(135deg, var(--text-primary) 0%, var(--text-secondary) 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* ─── Sidebar transition ─── */
+.sidebar-transition {
+  transition: width 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* ─── Step indicator line ─── */
+.step-line {
+  height: 1px;
+  background: linear-gradient(90deg, var(--accent-border), transparent);
+}
+
+/* ─── Masonry grid ─── */
+.masonry-grid {
+  columns: 3;
+  column-gap: 16px;
+}
+.masonry-item {
+  break-inside: avoid;
+  margin-bottom: 16px;
+}
+
+@media (max-width: 768px) {
+  .masonry-grid { columns: 2; }
+}
+@media (max-width: 480px) {
+  .masonry-grid { columns: 1; }
+}
+
+/* ─── Custom focus ─── */
+*:focus-visible {
+  outline: 2px solid var(--accent-border);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* ─── Placeholder ─── */
+::placeholder {
+  color: var(--text-placeholder);
+}

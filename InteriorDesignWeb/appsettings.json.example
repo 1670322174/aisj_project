@@ -1,0 +1,52 @@
+{
+  "Logging": {
+    "LogLevel": {
+      "Default": "Information",
+      "Microsoft.AspNetCore": "Warning"
+    }
+  },
+  "AllowedHosts": "*",
+  "ConnectionStrings": {
+    "DesignDB": "Server=localhost;Port=3306;Database=aisj_club;Uid=root;Pwd=your_password_here;"
+  },
+  "JwtSettings": {
+    "Secret": "your-jwt-secret-key-here",
+    "Issuer": "designhub-server",
+    "Audience": "designhub-client",
+    "ExpireMinutes": 3000
+  },
+  "Blinky": {
+    "Endpoint": "https://blinky.nemui.org/shot",
+    "DefaultWidth": 320,
+    "AllowedHosts": [ "https://localhost:7207/" ]
+  },
+  "RoleLimits": {
+    "SchemeCreation": {
+      "FreeUser": 3,
+      "Member": 10,
+      "PremiumMember": 999
+    },
+    "ImagesPerScheme": {
+      "FreeUser": 20,
+      "Member": 100,
+      "PremiumMember": 9999
+    }
+  },
+  "COS": {
+    "SecretId": "your-cos-secret-id",
+    "SecretKey": "your-cos-secret-key",
+    "Region": "ap-guangzhou",
+    "Bucket": "your-bucket-name",
+    "AppId": "your-app-id",
+    "BaseUrl": "https://your-bucket.cos.ap-guangzhou.myqcloud.com",
+    "ThumbnailSuffix": "_thumbnail",
+    "AIBucket": "your-ai-bucket",
+    "AIRegion": "ap-guangzhou",
+    "AIBaseUrl": "https://your-ai-bucket.cos.ap-guangzhou.myqcloud.com"
+  },
+  "ComfyUI": {
+    "ApiUrl": "http://your-server:6889/prompt",
+    "ImageUrl": "http://your-server:6889/api/view?filename=",
+    "WorkflowName": "FLUX-workflow-CephalonCloud.json"
+  }
+}

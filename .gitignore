@@ -1,0 +1,43 @@
+# .NET build artifacts
+bin/
+obj/
+*.user
+*.suo
+*.sln.docstates
+
+# Visual Studio
+.vs/
+.sln.ide/
+
+# IDE
+.idea/
+*.swp
+*.swo
+*~
+
+# Logs
+*.log
+debug.log
+
+# Config with secrets
+InteriorDesignWeb/appsettings.json
+InteriorDesignWeb/appsettings.Development.json
+
+# OS files
+Thumbs.db
+.DS_Store
+
+# Node.js
+node_modules/
+InteriorDesignWeb/wwwroot/node_modules/
+
+# Vite / frontend cache
+InteriorDesignWeb/wwwroot/node_modules/.vite/
+InteriorDesignWeb/wwwroot/dist/
+
+# NuGet packages
+packages/
+*.nupkg
+
+# Publish output
+publish/
