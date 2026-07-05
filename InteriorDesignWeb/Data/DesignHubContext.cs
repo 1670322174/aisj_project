@@ -1,92 +1,161 @@
-﻿
-using System.Collections.Generic;
-using System.Reflection.Emit;
 using Microsoft.EntityFrameworkCore;
 using InteriorDesignWeb.Models.Entities;
 
-namespace InteriorDesignWeb.Data
+namespace InteriorDesignWeb.Data;
+
+public class DesignHubContext : DbContext
 {
-    public class DesignHubContext : DbContext
+    public DesignHubContext(DbContextOptions<DesignHubContext> options) : base(options)
     {
+    }
 
-        public DesignHubContext(DbContextOptions<DesignHubContext> options)
-        : base(options)
-        {
-        }
+    public DbSet<User> users { get; set; }
+    public DbSet<Image> images { get; set; }
+    public DbSet<Project> projects { get; set; }
+    public DbSet<ProjectRoom> projectrooms { get; set; }
+    public DbSet<ProjectImage> projectimages { get; set; }
+    public DbSet<AiGenerationJob> aigenerationjobs { get; set; }
+    public DbSet<AiGenerationJobImage> aigenerationjobimages { get; set; }
+    public DbSet<UserQuota> userquotas { get; set; }
+    public DbSet<UsageRecord> usagerecords { get; set; }
+    public DbSet<ProjectActivity> projectactivities { get; set; }
 
-        // 数据库表集合
-        public DbSet<User> users { get; set; }
-        public DbSet<Image> images { get; set; }
-        /*4/6*/
-        public DbSet<Project> projects { get; set; }
-        public DbSet<ProjectRoom> projectrooms { get; set; }
-        public DbSet<ProjectImage> projectimages { get; set; }
+    protected override void OnModelCreating(ModelBuilder modelBuilder)
+    {
+        base.OnModelCreating(modelBuilder);
 
-        // AI生成任务表
-        public DbSet<AiGenerationJob> aigenerationjobs { get; set; }
-        public DbSet<AiGenerationJobImage> aigenerationjobimages { get; set; }
+        modelBuilder.Entity<User>().ToTable("users");
+        modelBuilder.Entity<Image>().ToTable("images");
+        modelBuilder.Entity<Project>().ToTable("projects");
+        modelBuilder.Entity<ProjectRoom>().ToTable("projectrooms");
+        modelBuilder.Entity<ProjectImage>().ToTable("projectimages");
+        modelBuilder.Entity<AiGenerationJob>().ToTable("aigenerationjobs");
+        modelBuilder.Entity<AiGenerationJobImage>().ToTable("aigenerationjobimages");
+        modelBuilder.Entity<UserQuota>().ToTable("userquotas");
+        modelBuilder.Entity<UsageRecord>().ToTable("usagerecords");
+        modelBuilder.Entity<ProjectActivity>().ToTable("projectactivities");
 
-        protected override void OnModelCreating(ModelBuilder modelBuilder)
-        {
-            base.OnModelCreating(modelBuilder);
-            // 配置实体关系等
-            /*4/6*/
-            // Project配置
+        modelBuilder.Entity<User>()
+            .Property(u => u.Role)
+            .HasConversion(
+                v => v.ToString(),
+                v => (UserRole)Enum.Parse(typeof(UserRole), v))
+            .HasMaxLength(20);
 
-            // ProjectImage配置
-            modelBuilder.Entity<ProjectImage>()
-                .HasOne(pi => pi.Project)
-                .WithMany(p => p.Images)
-                .HasForeignKey(pi => pi.ProjectID);
+        modelBuilder.Entity<Project>()
+            .HasOne(p => p.User)
+            .WithMany(u => u.Projects)
+            .HasForeignKey(p => p.UserID)
+            .OnDelete(DeleteBehavior.Cascade);
 
-            modelBuilder.Entity<ProjectImage>()
-                .HasOne(pi => pi.Room)
-                .WithMany(pr => pr.Images)
-                .HasForeignKey(pi => pi.RoomID);
+        modelBuilder.Entity<Project>()
+            .HasOne(p => p.CoverImage)
+            .WithMany()
+            .HasForeignKey(p => p.CoverImageID)
+            .OnDelete(DeleteBehavior.SetNull);
 
-            modelBuilder.Entity<ProjectImage>()
-                .HasOne(pi => pi.Image)
-                .WithMany() // 这里不需要反向导航属性，所以不指定集合
-                .HasForeignKey(pi => pi.ImageID);
-            // ProjectRoom层级配置
-            modelBuilder.Entity<ProjectRoom>()
-                .HasOne(pr => pr.ParentRoom)
-                .WithMany(pr => pr.Children)
-                .HasForeignKey(pr => pr.ParentRoomID)
-                .OnDelete(DeleteBehavior.ClientSetNull);
+        modelBuilder.Entity<Project>()
+            .HasOne(p => p.CoverAiImage)
+            .WithMany()
+            .HasForeignKey(p => p.CoverAiImageID)
+            .OnDelete(DeleteBehavior.SetNull);
 
-            // UserRole枚举配置----4/18-----//
-            modelBuilder.Entity<User>( )
-                .Property(u => u.Role)
-                .HasConversion(
-                    v => v.ToString(),        // 将枚举转换为字符串存储
-                    v => (UserRole)Enum.Parse(typeof(UserRole), v) // 从字符串转回枚举
-                )
-                .HasMaxLength(20);
+        modelBuilder.Entity<ProjectRoom>()
+            .HasOne(pr => pr.Project)
+            .WithMany(p => p.Rooms)
+            .HasForeignKey(pr => pr.ProjectID)
+            .OnDelete(DeleteBehavior.Cascade);
 
-            // 用户-项目关系配置
-            // 保留正确的关系配置
-            modelBuilder.Entity<Project>()
-                .HasOne(p => p.User)
-                .WithMany(u => u.Projects)
-                .HasForeignKey(p => p.UserID)
-                .OnDelete(DeleteBehavior.Cascade); // 添加级联删除
-                                                   // 其他实体配置...
+        modelBuilder.Entity<ProjectRoom>()
+            .HasOne(pr => pr.ParentRoom)
+            .WithMany(pr => pr.Children)
+            .HasForeignKey(pr => pr.ParentRoomID)
+            .OnDelete(DeleteBehavior.ClientSetNull);
 
-            modelBuilder.Entity<AiGenerationJob>(entity =>
-            {
-                entity.HasKey(e => e.JobId);
-                entity.Property(e => e.Status).IsRequired();
-                entity.Property(e => e.CreatedAt).IsRequired();
-            });
+        modelBuilder.Entity<ProjectImage>()
+            .HasOne(pi => pi.Project)
+            .WithMany(p => p.Images)
+            .HasForeignKey(pi => pi.ProjectID)
+            .OnDelete(DeleteBehavior.Cascade);
 
-            modelBuilder.Entity<ProjectImage>()
-    .HasOne(p => p.AiGenerationJobImage)
-    .WithMany()
-    .HasForeignKey(p => p.AiImageID)
-    .HasPrincipalKey(a => a.AiImageID)  // 显式指定主键
-    .OnDelete(DeleteBehavior.Restrict); // 避免外键删除联动
+        modelBuilder.Entity<ProjectImage>()
+            .HasOne(pi => pi.Room)
+            .WithMany(pr => pr.Images)
+            .HasForeignKey(pi => pi.RoomID)
+            .OnDelete(DeleteBehavior.Cascade);
 
-        }
+        modelBuilder.Entity<ProjectImage>()
+            .HasOne(pi => pi.Image)
+            .WithMany()
+            .HasForeignKey(pi => pi.ImageID)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<ProjectImage>()
+            .HasOne(pi => pi.AiGenerationJobImage)
+            .WithMany()
+            .HasForeignKey(pi => pi.AiImageID)
+            .HasPrincipalKey(a => a.AiImageID)
+            .OnDelete(DeleteBehavior.SetNull);
+
+        modelBuilder.Entity<ProjectImage>()
+            .HasOne(pi => pi.CreatedByUser)
+            .WithMany()
+            .HasForeignKey(pi => pi.CreatedByUserID)
+            .OnDelete(DeleteBehavior.SetNull);
+
+        modelBuilder.Entity<AiGenerationJob>()
+            .HasKey(e => e.JobId);
+
+        modelBuilder.Entity<AiGenerationJob>()
+            .HasOne(j => j.User)
+            .WithMany()
+            .HasForeignKey(j => j.UserID)
+            .OnDelete(DeleteBehavior.SetNull);
+
+        modelBuilder.Entity<AiGenerationJobImage>()
+            .HasOne(img => img.AiGenerationJob)
+            .WithMany(job => job.Images)
+            .HasForeignKey(img => img.JobId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<AiGenerationJobImage>()
+            .HasOne(img => img.User)
+            .WithMany()
+            .HasForeignKey(img => img.UserID)
+            .OnDelete(DeleteBehavior.SetNull);
+
+        modelBuilder.Entity<UserQuota>()
+            .HasIndex(q => q.UserID)
+            .IsUnique();
+
+        modelBuilder.Entity<UserQuota>()
+            .HasOne(q => q.User)
+            .WithMany()
+            .HasForeignKey(q => q.UserID)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<UsageRecord>()
+            .HasOne(r => r.User)
+            .WithMany()
+            .HasForeignKey(r => r.UserID)
+            .OnDelete(DeleteBehavior.SetNull);
+
+        modelBuilder.Entity<UsageRecord>()
+            .HasOne(r => r.AiGenerationJob)
+            .WithMany()
+            .HasForeignKey(r => r.JobId)
+            .OnDelete(DeleteBehavior.SetNull);
+
+        modelBuilder.Entity<ProjectActivity>()
+            .HasOne(a => a.Project)
+            .WithMany()
+            .HasForeignKey(a => a.ProjectID)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<ProjectActivity>()
+            .HasOne(a => a.User)
+            .WithMany()
+            .HasForeignKey(a => a.UserID)
+            .OnDelete(DeleteBehavior.SetNull);
     }
 }

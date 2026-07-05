@@ -1,39 +1,49 @@
-﻿using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 
-namespace InteriorDesignWeb.Models.Entities
+namespace InteriorDesignWeb.Models.Entities;
+
+public class ProjectImage
 {
-    /*4/6*/
-    public class ProjectImage
-    {
-        [Key]
-        [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
-        public int RelationID { get; set; }
+    [Key]
+    [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
+    public int RelationID { get; set; }
 
-        [Required]
-        public int ProjectID { get; set; }
+    [Required]
+    public int ProjectID { get; set; }
 
+    public int? RoomID { get; set; }
 
-        public int? RoomID { get; set; }  // Allow RoomID to be null
+    public int? ImageID { get; set; }
 
+    public int? AiImageID { get; set; }
 
-        public int? ImageID { get; set; }  // For ImageID (optional)
+    [Column(TypeName = "json")]
+    public List<string>? CustomTags { get; set; }
 
-        // 修改：添加 AiImageID 字段，关联 AiGenerationJobImage
-        [ForeignKey("AiGenerationJobImage")]
-        public int? AiImageID { get; set; }  // AiImageID 可能为空（对于传统图片）
+    public DateTime AddedTime { get; set; } = DateTime.UtcNow;
 
-        [Column(TypeName = "json")]
-        public List<string>? CustomTags { get; set; }
+    [StringLength(30)]
+    public string SourceType { get; set; } = "gallery";
 
-        public DateTime AddedTime { get; set; } = DateTime.UtcNow;
+    public int SortOrder { get; set; }
 
-        // 导航属性
-        public virtual Project? Project { get; set; }
-        public virtual ProjectRoom? Room { get; set; }
-        public virtual Image? Image { get; set; }
+    public bool IsFavorite { get; set; }
 
-        // 导航属性：关联 AiGenerationJobImage
-        public AiGenerationJobImage? AiGenerationJobImage { get; set; }
-    }
+    public bool IsCover { get; set; }
+
+    [Column(TypeName = "text")]
+    public string? Note { get; set; }
+
+    public int? CreatedByUserID { get; set; }
+
+    public virtual Project? Project { get; set; }
+
+    public virtual ProjectRoom? Room { get; set; }
+
+    public virtual Image? Image { get; set; }
+
+    public AiGenerationJobImage? AiGenerationJobImage { get; set; }
+
+    public User? CreatedByUser { get; set; }
 }
