@@ -1,3 +1,7 @@
+// 作用：集中注册 AI 生图相关基础设施。
+// 当前阶段保留已有 ComfyUI / Flux 工作流能力，同时注册新的 AIJob 任务中心骨架。
+// 注意：本文件不接入 7 个具体工作流，后续应在拿到工作流详情后再扩展 WorkflowRegistry / WorkflowBuilder。
+
 using InteriorDesignWeb.Config;
 using InteriorDesignWeb.Repositories.AI;
 using InteriorDesignWeb.Services;
@@ -20,6 +24,7 @@ public static class AIInfrastructureServiceExtensions
             throw new InvalidOperationException("ComfyUI:ApiUrl 未配置。");
         }
 
+        // ComfyUI 作为当前阶段真实生图 Provider，后续会降级为 ComfyUIProvider / Client。
         services.AddHttpClient("ComfyUI", client =>
         {
             client.BaseAddress = new Uri(comfyApiUrl);
@@ -27,16 +32,17 @@ public static class AIInfrastructureServiceExtensions
         })
         .ConfigurePrimaryHttpMessageHandler(() =>
         {
-            var handler = new HttpClientHandler();
+            var handler = new HttpClientHandler
+            {
+                UseProxy = false,
+                Proxy = null
+            };
 
             if (environment.IsDevelopment())
             {
                 handler.ServerCertificateCustomValidationCallback =
                     HttpClientHandler.DangerousAcceptAnyServerCertificateValidator;
             }
-
-            handler.UseProxy = false;
-            handler.Proxy = null;
 
             return handler;
         });
@@ -45,14 +51,16 @@ public static class AIInfrastructureServiceExtensions
             configuration.GetSection("RoleLimits")
         );
 
+        // 旧 AI 生图链路：当前仍保留，保证 /api/flux/* 不被破坏。
         services.TryAddScoped<FluxWorkflowService>();
         services.TryAddScoped<JobTrackingService>();
         services.TryAddScoped<ComfyUIService>();
 
-        // AI 任务中心
+        // 新 AI 任务中心：后续作为统一主入口。
         services.TryAddScoped<IAIJobRepository, AIJobRepository>();
         services.TryAddScoped<IAIJobService, AIJobService>();
 
+        // 额度和角色限制：必须同时注册接口和实现，兼容现有 Controller / Service 注入方式。
         services.TryAddScoped<IRoleLimitService, RoleLimitService>();
         services.TryAddScoped<RoleLimitService>();
 

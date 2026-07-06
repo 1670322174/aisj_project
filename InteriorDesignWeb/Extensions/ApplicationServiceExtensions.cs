@@ -1,3 +1,6 @@
+// 作用：集中注册 Controller、Swagger、CORS 等 Web 层基础服务。
+// Program.cs 只调用这些扩展方法，避免启动入口堆积大量配置代码。
+
 using System.Text.Json.Serialization;
 using InteriorDesignWeb.Filters;
 using Microsoft.OpenApi.Models;
@@ -12,6 +15,7 @@ public static class ApplicationServiceExtensions
             .AddControllers()
             .AddJsonOptions(options =>
             {
+                // 避免 EF 导航属性循环引用导致接口序列化失败。
                 options.JsonSerializerOptions.ReferenceHandler = ReferenceHandler.IgnoreCycles;
             });
 
@@ -55,7 +59,7 @@ public static class ApplicationServiceExtensions
                 }
             });
 
-            // hermes 2026-07-05: restored SwaggerFileUploadFilter for file upload support
+            // 支持 Swagger 正确展示 multipart/form-data 文件上传接口。
             c.OperationFilter<SwaggerFileUploadFilter>();
         });
 
