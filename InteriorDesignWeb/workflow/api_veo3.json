@@ -1,0 +1,49 @@
+{
+  "1": {
+    "inputs": {
+      "prompt": "Cinematic interior walkthrough video based on reference image.\nCamera slowly dolly-in from entrance into the room with gentle horizontal pan, simulating a person walking into the space.\n\nKeep the same style, lighting, materials, and color palette as the reference image. No style or lighting change.\n\nSubtle spatial outpainting to extend room naturally with correct perspective and geometry.\n\nSmooth, stable motion, no shake, no flicker, no distortion.\nWide-angle cinematic lens, natural depth of field.\n\nEnd with a wide view of the full interior space.\n",
+      "aspect_ratio": "16:9",
+      "resolution": "720p",
+      "negative_prompt": 8,
+      "duration_seconds": 6,
+      "enhance_prompt": "ALLOW",
+      "person_generation": "BLOCK",
+      "seed": 0,
+      "model": "veo-3.1-generate",
+      "generate_audio": false,
+      "image": [
+        "11",
+        0
+      ]
+    },
+    "class_type": "Veo3VideoGenerationNode",
+    "_meta": {
+      "title": "Google Veo 3 视频生成"
+    }
+  },
+  "10": {
+    "inputs": {
+      "filename_prefix": "video/ComfyUI",
+      "format": "auto",
+      "codec": "auto",
+      "video-preview": "",
+      "video": [
+        "1",
+        0
+      ]
+    },
+    "class_type": "SaveVideo",
+    "_meta": {
+      "title": "保存视频"
+    }
+  },
+  "11": {
+    "inputs": {
+      "image": "chinese_room_tv_cabinet_steps_preserved_00001_.png"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "加载图像"
+    }
+  }
+}

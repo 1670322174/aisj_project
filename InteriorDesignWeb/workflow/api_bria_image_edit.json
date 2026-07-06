@@ -1,0 +1,71 @@
+{
+  "3": {
+    "inputs": {
+      "model": "FIBO",
+      "prompt": "把图中的地面换成瓷砖，把水印去掉，其他保持不变",
+      "negative_prompt": "lens flare, glare, sun prism, light bleeding, hazy, blurry, overexposed highlights, chromatic aberration, glowing fog.",
+      "structured_prompt": "",
+      "seed": 122821678,
+      "guidance_scale": 3,
+      "steps": 50,
+      "moderation": "true",
+      "moderation.prompt_content_moderation": false,
+      "moderation.visual_input_moderation": false,
+      "moderation.visual_output_moderation": false,
+      "image": [
+        "5",
+        0
+      ]
+    },
+    "class_type": "BriaImageEditNode",
+    "_meta": {
+      "title": "Bria FIBO 图像编辑"
+    }
+  },
+  "5": {
+    "inputs": {
+      "image": "355778.jpg"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "加载图像"
+    }
+  },
+  "8": {
+    "inputs": {
+      "filename_prefix": "Bria",
+      "images": [
+        "3",
+        0
+      ]
+    },
+    "class_type": "SaveImage",
+    "_meta": {
+      "title": "保存图像"
+    }
+  },
+  "10": {
+    "inputs": {
+      "compare_view": {
+        "beforeImages": [
+          "/api/view?filename=comfy.compare.a_temp_dabay_00001_.png&subfolder=&type=temp&rand=0.6367303064816575"
+        ],
+        "afterImages": [
+          "/api/view?filename=comfy.compare.b_temp_dabay_00001_.png&subfolder=&type=temp&rand=0.6367303064816575"
+        ]
+      },
+      "image_a": [
+        "5",
+        0
+      ],
+      "image_b": [
+        "3",
+        0
+      ]
+    },
+    "class_type": "ImageCompare",
+    "_meta": {
+      "title": "图像对比"
+    }
+  }
+}

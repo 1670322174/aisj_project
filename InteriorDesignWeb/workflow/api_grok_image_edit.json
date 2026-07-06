@@ -1,0 +1,29 @@
+{
+  "2": {
+    "inputs": {
+      "model": "grok-imagine-image",
+      "prompt": "生成一个中国男性帅哥的照片，年龄在15岁到25岁之间。",
+      "aspect_ratio": "1:1",
+      "number_of_images": 1,
+      "seed": 1097959943,
+      "resolution": "1K"
+    },
+    "class_type": "GrokImageNode",
+    "_meta": {
+      "title": "Grok 图像"
+    }
+  },
+  "3": {
+    "inputs": {
+      "filename_prefix": "Grok",
+      "images": [
+        "2",
+        0
+      ]
+    },
+    "class_type": "SaveImage",
+    "_meta": {
+      "title": "保存图像"
+    }
+  }
+}

@@ -1,0 +1,41 @@
+{
+  "33": {
+    "inputs": {
+      "image": "355778.jpg"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "加载图像"
+    }
+  },
+  "34": {
+    "inputs": {
+      "filename_prefix": "UNI-1",
+      "images": [
+        "37",
+        0
+      ]
+    },
+    "class_type": "SaveImage",
+    "_meta": {
+      "title": "保存图像"
+    }
+  },
+  "37": {
+    "inputs": {
+      "prompt": "保持原有图片的房间结构和家居食品不变，只把场景改为夜晚模式",
+      "model": "uni-1-max",
+      "model.style": "auto",
+      "model.web_search": false,
+      "seed": 1051629078,
+      "source": [
+        "33",
+        0
+      ]
+    },
+    "class_type": "LumaImageEditNode2",
+    "_meta": {
+      "title": "Luma UNI-1 图像编辑"
+    }
+  }
+}
