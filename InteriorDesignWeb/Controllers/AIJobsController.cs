@@ -1,6 +1,6 @@
-// 作用：提供 AI 生成任务中心的对外 API。
-// 当前阶段只负责创建任务、查询任务列表、查询任务详情；
-// 不直接调用 ComfyUI，也不接入 7 个具体工作流。
+// 作用：提供 AI 任务中心的对外 API。
+// 本 Controller 负责创建占位任务、查询任务列表、查询任务详情和查询任务结果。
+// 真正提交 7 个工作流请使用 AIGenerationsController：/api/ai/generations。
 
 using System.Security.Claims;
 using InteriorDesignWeb.Application.Common;
@@ -8,12 +8,14 @@ using InteriorDesignWeb.Models.DTOs.AI;
 using InteriorDesignWeb.Services.AI;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Http;
 
 namespace InteriorDesignWeb.Controllers;
 
 [ApiController]
 [Authorize]
 [Route("api/ai-jobs")]
+[Route("api/ai/jobs")]
 public class AIJobsController : ControllerBase
 {
     private readonly IAIJobService _aiJobService;
@@ -103,6 +105,28 @@ public class AIJobsController : ControllerBase
 
         return Ok(ApiResponse<AIJobDto>.Ok(
             job,
+            "查询成功",
+            HttpContext.TraceIdentifier));
+    }
+
+
+    /// <summary>
+    /// 查询当前用户的单个 AI 任务结果。
+    /// </summary>
+    [HttpGet("{jobId}/results")]
+    public async Task<ActionResult<ApiResponse<IReadOnlyList<AIJobResultDto>>>> GetJobResults(
+        string jobId,
+        CancellationToken cancellationToken)
+    {
+        var userId = GetCurrentUserId();
+
+        var results = await _aiJobService.GetJobResultsAsync(
+            jobId,
+            userId,
+            cancellationToken);
+
+        return Ok(ApiResponse<IReadOnlyList<AIJobResultDto>>.Ok(
+            results,
             "查询成功",
             HttpContext.TraceIdentifier));
     }

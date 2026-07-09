@@ -24,6 +24,11 @@ public interface IAIJobService
         int pageSize,
         CancellationToken cancellationToken = default);
 
+    Task<IReadOnlyList<AIJobResultDto>> GetJobResultsAsync(
+        string jobId,
+        int userId,
+        CancellationToken cancellationToken = default);
+
     Task MarkProcessingAsync(
         string jobId,
         string? providerJobId = null,

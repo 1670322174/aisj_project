@@ -18,6 +18,11 @@ public interface IAIJobRepository
         int pageSize,
         CancellationToken cancellationToken = default);
 
+    Task<IReadOnlyList<AiGenerationJobImage>> GetJobImagesAsync(
+        string jobId,
+        int userId,
+        CancellationToken cancellationToken = default);
+
     Task<long> CountUserJobsAsync(
         int userId,
         CancellationToken cancellationToken = default);

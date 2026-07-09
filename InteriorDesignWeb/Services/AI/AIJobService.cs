@@ -7,6 +7,7 @@ using InteriorDesignWeb.Application.Common;
 using InteriorDesignWeb.Models.DTOs.AI;
 using InteriorDesignWeb.Models.Entities;
 using InteriorDesignWeb.Repositories.AI;
+using Microsoft.AspNetCore.Http;
 
 namespace InteriorDesignWeb.Services.AI;
 
@@ -112,6 +113,35 @@ public class AIJobService : IAIJobService
             page,
             pageSize,
             total);
+    }
+
+
+    public async Task<IReadOnlyList<AIJobResultDto>> GetJobResultsAsync(
+        string jobId,
+        int userId,
+        CancellationToken cancellationToken = default)
+    {
+        var job = await _repository.GetByIdAsync(jobId, userId, cancellationToken);
+        if (job == null)
+        {
+            throw new AppException(
+                ErrorCodes.AiJobNotFound,
+                "AI任务不存在或无权访问。",
+                StatusCodes.Status404NotFound);
+        }
+
+        var images = await _repository.GetJobImagesAsync(jobId, userId, cancellationToken);
+        return images.Select(image => new AIJobResultDto
+        {
+            AiImageID = image.AiImageID,
+            JobId = image.JobId,
+            ImageUrl = image.ImageUrl,
+            CosPath = image.CosPath,
+            ThumbnailPath = image.ThumbnailPath,
+            SourceType = image.SourceType,
+            MetadataJson = image.MetadataJson,
+            CreatedAt = image.CreatedAt
+        }).ToList();
     }
 
     public async Task MarkProcessingAsync(

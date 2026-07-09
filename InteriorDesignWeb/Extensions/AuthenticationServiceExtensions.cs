@@ -1,3 +1,4 @@
+using InteriorDesignWeb;
 using System.Security.Claims;
 using System.Text;
 using InteriorDesignWeb.Models.Entities;
@@ -13,6 +14,7 @@ public static class AuthenticationServiceExtensions
         this IServiceCollection services,
         IConfiguration configuration)
     {
+        services.Configure<JwtSettings>(configuration.GetSection("JwtSettings"));
         var secret = configuration["JwtSettings:Secret"];
         var issuer = configuration["JwtSettings:Issuer"];
         var audience = configuration["JwtSettings:Audience"];

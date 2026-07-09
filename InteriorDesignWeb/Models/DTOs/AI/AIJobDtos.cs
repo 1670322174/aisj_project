@@ -56,3 +56,23 @@ public class AIJobDto
 
     public int ImageCount { get; set; }
 }
+
+
+public class AIJobResultDto
+{
+    public int AiImageID { get; set; }
+
+    public string JobId { get; set; } = string.Empty;
+
+    public string? ImageUrl { get; set; }
+
+    public string? CosPath { get; set; }
+
+    public string? ThumbnailPath { get; set; }
+
+    public string SourceType { get; set; } = "ai";
+
+    public string? MetadataJson { get; set; }
+
+    public DateTime CreatedAt { get; set; }
+}

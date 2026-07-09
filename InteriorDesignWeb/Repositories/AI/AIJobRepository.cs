@@ -56,6 +56,19 @@ public class AIJobRepository : IAIJobRepository
             .ToListAsync(cancellationToken);
     }
 
+
+    public async Task<IReadOnlyList<AiGenerationJobImage>> GetJobImagesAsync(
+        string jobId,
+        int userId,
+        CancellationToken cancellationToken = default)
+    {
+        return await _context.aigenerationjobimages
+            .Where(image => image.JobId == jobId && image.UserID == userId)
+            .OrderBy(image => image.CreatedAt)
+            .AsNoTracking()
+            .ToListAsync(cancellationToken);
+    }
+
     public async Task<long> CountUserJobsAsync(
         int userId,
         CancellationToken cancellationToken = default)
