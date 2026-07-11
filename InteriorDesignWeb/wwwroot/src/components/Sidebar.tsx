@@ -1,6 +1,6 @@
 // src/components/Sidebar.tsx
 import { useState, useEffect, useRef } from 'react'
-import { NavLink, useNavigate } from 'react-router-dom'
+import { NavLink, useLocation, useNavigate } from 'react-router-dom'
 import {
   Sparkles,
   Wand2,
@@ -18,15 +18,24 @@ import {
   Plus,
   Loader2,
   CheckCircle2,
+  History,
+  RefreshCw,
+  Bot,
+  MoreHorizontal,
+  Trash2,
+  ExternalLink,
 } from 'lucide-react'
+import { aiApi, type AIJob } from '@/api/modules/ai'
+import { MODE_LABELS, WORKFLOW_MODE } from '@/features/ai/config'
 import { useAppStore } from '@/store/useAppStore'
 import { cn } from '@/utils/cn'
 
 const NAV_ITEMS = [
-  { to: '/app/generate', icon: Wand2,      label: 'AI 生成' },
+  { to: '/app/generate/text', icon: Wand2,      label: 'AI 生成' },
   { to: '/app/gallery',  icon: Images,     label: '图库'   },
   { to: '/app/new',      icon: PlusCircle, label: '新建方案' },
   { to: '/app/projects', icon: FolderOpen, label: '方案管理' },
+  { to: '/app/assistant', icon: Bot, label: 'AI 助理' },
 ]
 
 /* ─────────────────────────────────────────
@@ -326,6 +335,176 @@ function ProjectSelector({ collapsed }: ProjectSelectorProps) {
   )
 }
 
+function jobRoute(job: AIJob): string {
+  const mode = WORKFLOW_MODE[job.workflowCode] ?? 'text'
+  return `/app/generate/${mode}/jobs/${job.jobId}`
+}
+
+function jobTitle(job: AIJob): string {
+  const text = job.prompt?.trim() || MODE_LABELS[WORKFLOW_MODE[job.workflowCode] ?? 'text']
+  return text.length > 18 ? `${text.slice(0, 18)}…` : text
+}
+
+function jobStatusColor(status: string): string {
+  const value = status.toLowerCase()
+  if (['succeeded', 'completed', 'success'].includes(value)) return 'bg-emerald-400'
+  if (['failed', 'error', 'timeout', 'cancelled', 'canceled'].includes(value)) return 'bg-red-400'
+  return 'bg-amber-400 animate-pulse'
+}
+
+function isTerminalJob(status: string): boolean {
+  return ['succeeded', 'completed', 'success', 'failed', 'error', 'timeout', 'cancelled', 'canceled']
+    .includes(status.toLowerCase())
+}
+
+function RecentTasks({ collapsed, enabled }: { collapsed: boolean; enabled: boolean }) {
+  const navigate = useNavigate()
+  const location = useLocation()
+  const [jobs, setJobs] = useState<AIJob[]>([])
+  const [loading, setLoading] = useState(false)
+  const [openMenuJobId, setOpenMenuJobId] = useState('')
+  const [deletingJobId, setDeletingJobId] = useState('')
+  const [taskError, setTaskError] = useState('')
+
+  const loadJobs = async () => {
+    if (!enabled) {
+      setJobs([])
+      return
+    }
+    setLoading(true)
+    try {
+      const result = await aiApi.getJobs(1, 20)
+      setJobs(result.items)
+    } catch {
+      setJobs([])
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    void loadJobs()
+    // 进入其他页面或任务完成后回到侧栏时刷新最近记录。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [enabled, location.pathname])
+
+  useEffect(() => {
+    if (!openMenuJobId) return
+    const closeMenu = () => setOpenMenuJobId('')
+    window.addEventListener('click', closeMenu)
+    return () => window.removeEventListener('click', closeMenu)
+  }, [openMenuJobId])
+
+  const deleteJob = async (job: AIJob) => {
+    if (!isTerminalJob(job.status) || deletingJobId) return
+    setDeletingJobId(job.jobId)
+    setTaskError('')
+    try {
+      await aiApi.deleteJob(job.jobId)
+      setJobs((current) => current.filter((item) => item.jobId !== job.jobId))
+      setOpenMenuJobId('')
+      if (location.pathname.includes(`/jobs/${job.jobId}`)) {
+        const mode = WORKFLOW_MODE[job.workflowCode] ?? 'text'
+        navigate(`/app/generate/${mode}`)
+      }
+    } catch (error) {
+      setTaskError(error instanceof Error ? error.message : '任务记录删除失败')
+    } finally {
+      setDeletingJobId('')
+    }
+  }
+
+  if (collapsed) {
+    const latest = jobs[0]
+    return (
+      <div className="relative flex justify-center group px-2">
+        <button
+          type="button"
+          disabled={!latest}
+          onClick={() => latest && navigate(jobRoute(latest))}
+          className="w-10 h-10 flex items-center justify-center rounded-xl text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-card)] disabled:opacity-40 transition-colors"
+        >
+          <History size={16} />
+        </button>
+        <div className="absolute left-full top-1/2 -translate-y-1/2 ml-2 z-50 px-2.5 py-1.5 rounded-lg whitespace-nowrap bg-[var(--bg-card)] border border-[var(--border-default)] text-xs text-[var(--text-primary)] shadow-lg opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity">
+          {latest ? `最近任务：${jobTitle(latest)}` : '暂无任务记录'}
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <section className="px-2 min-h-0 h-full flex flex-col">
+      <div className="flex items-center justify-between px-1 mb-1.5">
+        <span className="text-[10px] font-semibold text-[var(--text-tertiary)] uppercase tracking-widest">最近任务</span>
+        <button type="button" onClick={() => void loadJobs()} disabled={loading || !enabled} className="p-1 rounded-md text-[var(--text-tertiary)] hover:text-[var(--text-primary)] disabled:opacity-40">
+          <RefreshCw size={11} className={loading ? 'animate-spin' : ''} />
+        </button>
+      </div>
+      <div className="flex-1 min-h-0 overflow-y-auto space-y-1 pr-0.5 pb-2">
+        {jobs.map((job) => {
+          const mode = WORKFLOW_MODE[job.workflowCode] ?? 'text'
+          return (
+            <div key={job.jobId} className="relative rounded-lg hover:bg-[var(--bg-card)] transition-colors group">
+              <button
+                type="button"
+                onClick={() => navigate(jobRoute(job))}
+                className="w-full pl-2.5 pr-8 py-2 text-left"
+                title={job.prompt || job.workflowCode}
+              >
+                <div className="flex items-center gap-2">
+                  <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${jobStatusColor(job.status)}`} />
+                  <span className="flex-1 min-w-0 text-xs text-[var(--text-secondary)] group-hover:text-[var(--text-primary)] truncate">{jobTitle(job)}</span>
+                </div>
+                <div className="pl-3.5 mt-1 flex items-center justify-between gap-2 text-[10px] text-[var(--text-tertiary)]">
+                  <span>{MODE_LABELS[mode]}</span>
+                  <span>{job.createdAt ? new Date(job.createdAt).toLocaleDateString() : ''}</span>
+                </div>
+              </button>
+              <button
+                type="button"
+                aria-label="任务操作"
+                onClick={(event) => {
+                  event.stopPropagation()
+                  setOpenMenuJobId((current) => current === job.jobId ? '' : job.jobId)
+                  setTaskError('')
+                }}
+                className="absolute right-1.5 top-1.5 w-6 h-6 rounded-md flex items-center justify-center text-[var(--text-tertiary)] opacity-60 group-hover:opacity-100 focus:opacity-100 hover:text-[var(--text-primary)] hover:bg-[var(--bg-input)] transition-all"
+              >
+                <MoreHorizontal size={14} />
+              </button>
+              {openMenuJobId === job.jobId ? (
+                <div
+                  className="absolute right-1.5 top-8 z-50 w-32 p-1 rounded-lg bg-[var(--bg-card)] border border-[var(--border-default)] shadow-xl animate-soft-pop origin-top-right"
+                  onClick={(event) => event.stopPropagation()}
+                >
+                  <button type="button" onClick={() => navigate(jobRoute(job))} className="w-full px-2.5 py-2 rounded-md flex items-center gap-2 text-xs text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-input)]">
+                    <ExternalLink size={12} />打开任务
+                  </button>
+                  <button
+                    type="button"
+                    disabled={!isTerminalJob(job.status) || deletingJobId === job.jobId}
+                    onClick={() => void deleteJob(job)}
+                    title={!isTerminalJob(job.status) ? '运行中的任务需先取消或等待结束' : undefined}
+                    className="w-full px-2.5 py-2 rounded-md flex items-center gap-2 text-xs text-red-400 hover:bg-red-500/10 disabled:text-[var(--text-tertiary)] disabled:hover:bg-transparent disabled:cursor-not-allowed"
+                  >
+                    {deletingJobId === job.jobId ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />}
+                    删除记录
+                  </button>
+                </div>
+              ) : null}
+            </div>
+          )
+        })}
+        {!loading && jobs.length === 0 ? (
+          <p className="px-2.5 py-3 text-[11px] text-[var(--text-tertiary)]">{enabled ? '暂无任务记录' : '登录后查看任务'}</p>
+        ) : null}
+        {taskError ? <p className="px-2.5 py-2 text-[10px] text-red-400">{taskError}</p> : null}
+      </div>
+    </section>
+  )
+}
+
 /* ─────────────────────────────────────────
    主组件
 ───────────────────────────────────────── */
@@ -439,6 +618,10 @@ export function Sidebar() {
         {/* 分割线 */}
         <div className="border-t border-[var(--border-subtle)] mb-3" />
         <ProjectSelector collapsed={collapsed} />
+      </div>
+
+      <div className="border-t border-[var(--border-subtle)] pt-3 flex-1 min-h-0 overflow-hidden">
+        <RecentTasks collapsed={collapsed} enabled={Boolean(user)} />
       </div>
 
       {/* ── 底部操作区 ── */}

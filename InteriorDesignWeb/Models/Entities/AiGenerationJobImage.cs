@@ -8,9 +8,8 @@ public class AiGenerationJobImage
     [Key]
     public int AiImageID { get; set; }
 
-    [Required]
     [StringLength(50)]
-    public string JobId { get; set; } = string.Empty;
+    public string? JobId { get; set; }
 
     public string? ImageUrl { get; set; }
 
@@ -48,7 +47,22 @@ public class AiGenerationJobImage
     [Column(TypeName = "json")]
     public string? MetadataJson { get; set; }
 
-    public AiGenerationJob AiGenerationJob { get; set; } = null!;
+    [StringLength(64)]
+    public string? OutputKey { get; set; }
+
+    [Required]
+    [StringLength(30)]
+    public string RetentionStatus { get; set; } = RetentionActive;
+
+    public DateTime? DetachedAt { get; set; }
+
+    public DateTime? CleanupEligibleAt { get; set; }
+
+    public AiGenerationJob? AiGenerationJob { get; set; }
 
     public User? User { get; set; }
+
+    public const string RetentionActive = "active";
+    public const string RetentionRetained = "retained";
+    public const string RetentionCleanupPending = "cleanup_pending";
 }

@@ -1,5 +1,6 @@
 // src/api/modules/projects.ts
 import { requestWithAuth } from '../client'
+import { fetchAuthenticatedMedia } from '../media'
 
 /* ─────────────────────────────────────────
    类型定义
@@ -11,20 +12,35 @@ export interface Project {
   createdAt:   string
 }
 
+type RawProject = {
+  projectID?: string | number
+  ProjectID?: string | number
+  name?: string
+  Name?: string
+  description?: string | null
+  Description?: string | null
+  createdAt?: string
+  CreatedAt?: string
+}
+
 export interface ProjectImage {
   relationID:   string
-  imageID:      string | null
-  aiImageID:    string | null
+  imageID:      string | number | null
+  aiImageID:    string | number | null
   room:         string | null
   thumbnailUrl: string
   fullImageUrl: string
   fileName:     string
+  sourceType?:  string
 }
 
 export interface NormalizedProjectImage {
   relationID:   string
   imageId:      string   // imageID ?? aiImageID，取非空的那个
   isAi:         boolean  // aiImageID 不为 null 则为 true
+  imageID:      string | null
+  aiImageID:    string | null
+  sourceType:   'ai' | 'gallery'
   room:         string   // 空/null/'null' 统一为 'unclassified'
   thumbnailUrl: string
   fullImageUrl: string
@@ -54,24 +70,37 @@ function extractData<T>(resp: unknown): T {
   return resp as T
 }
 
+function normalizeProject(raw: RawProject): Project {
+  return {
+    projectID: String(raw.projectID ?? raw.ProjectID ?? ''),
+    name: raw.name ?? raw.Name ?? '',
+    description: raw.description ?? raw.Description ?? '',
+    createdAt: raw.createdAt ?? raw.CreatedAt ?? '',
+  }
+}
+
 /* ─────────────────────────────────────────
    私有工具：标准化单张图片
 ───────────────────────────────────────── */
 function normalizeProjectImage(raw: ProjectImage): NormalizedProjectImage {
-  // imageId：取第一个非空值
-  const imageId = raw.imageID ?? raw.aiImageID ?? ''
+  const imageID = raw.imageID === null || raw.imageID === undefined ? null : String(raw.imageID)
+  const aiImageID = raw.aiImageID === null || raw.aiImageID === undefined ? null : String(raw.aiImageID)
+  const imageId = imageID ?? aiImageID ?? ''
 
   // isAi：aiImageID 存在且非空
-  const isAi = raw.aiImageID !== null && raw.aiImageID !== undefined
+  const isAi = aiImageID !== null
 
   // room：空字符串 / null / 字面量 'null' 统一归为 unclassified
   const roomRaw = (raw.room ?? '').trim().toLowerCase()
   const room    = roomRaw === '' || roomRaw === 'null' ? 'unclassified' : roomRaw
 
   return {
-    relationID:   raw.relationID   ?? '',
+    relationID:   String(raw.relationID ?? ''),
     imageId,
     isAi,
+    imageID,
+    aiImageID,
+    sourceType: isAi ? 'ai' : 'gallery',
     room,
     thumbnailUrl: raw.thumbnailUrl ?? '',
     fullImageUrl: raw.fullImageUrl ?? '',
@@ -85,7 +114,8 @@ function normalizeProjectImage(raw: ProjectImage): NormalizedProjectImage {
 ───────────────────────────────────────── */
 async function getUserProjects(): Promise<Project[]> {
   const resp = await requestWithAuth('/projects', { method: 'GET' })
-  return extractData<Project[]>(resp) ?? []
+  const projects = extractData<RawProject[]>(resp) ?? []
+  return projects.map(normalizeProject)
 }
 
 /* ─────────────────────────────────────────
@@ -101,6 +131,15 @@ async function getProjectImages(
   )
   const raw = extractData<ProjectImage[]>(resp) ?? []
   return raw.map(normalizeProjectImage)
+}
+
+function fetchProjectImageMedia(
+  projectId: string,
+  relationId: string,
+  type: 'thumbnail' | 'original',
+): Promise<string> {
+  const endpoint = `/projects/${encodeURIComponent(projectId)}/images/${encodeURIComponent(relationId)}/file?type=${type}`
+  return fetchAuthenticatedMedia(endpoint, `project-image:${projectId}:${relationId}:${type}`)
 }
 
 /* ─────────────────────────────────────────
@@ -141,7 +180,7 @@ async function createProject(data: {
       Description: data.description,
     }),
   })
-  return extractData<Project>(resp)
+  return normalizeProject(extractData<RawProject>(resp))
 }
 
 /* ─────────────────────────────────────────
@@ -173,6 +212,7 @@ export function groupImagesByRoom(
 export const projectsApi = {
   getUserProjects,
   getProjectImages,
+  fetchProjectImageMedia,
   deleteProject,
   removeImageFromProject,
   createProject,
@@ -181,6 +221,7 @@ export const projectsApi = {
   addRoomsToProject,
   getProjectRooms,
   addImageToProject,
+  addAiImageToProject,
 }
 
 // ─── 创建方案功能-新增内容追加到 src/api/modules/projects.ts 末尾 ───
@@ -438,3 +479,25 @@ async function addImageToProject(
   })
 }
 
+
+
+/* ─────────────────────────────────────────
+   addAiImageToProject
+   将 AI 生成结果加入当前项目。RoomID 会一并发送；
+   是否写入房间取决于当前后端 ProjectImagesController 的实现。
+───────────────────────────────────────── */
+async function addAiImageToProject(
+  projectId: string,
+  aiImageId: number,
+  roomId: number | null = null,
+): Promise<void> {
+  await requestWithAuth(`/projects/${projectId}/images`, {
+    method: 'POST',
+    body: JSON.stringify({
+      RoomID: roomId ?? 0,
+      ImageID: 0,
+      AiImageID: aiImageId,
+      CustomTags: [],
+    }),
+  })
+}

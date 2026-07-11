@@ -11,7 +11,7 @@ export function Input({ label, error, icon, className, ...props }: InputProps) {
   return (
     <div className="flex flex-col gap-1.5">
       {label && (
-        <label className="text-xs font-medium text-[var(--text-secondary)] tracking-wide">
+        <label className="text-[13px] font-medium text-[var(--text-secondary)] tracking-wide">
           {label}
         </label>
       )}

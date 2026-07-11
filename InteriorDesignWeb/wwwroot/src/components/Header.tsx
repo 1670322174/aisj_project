@@ -120,7 +120,7 @@ export function Header() {
               <Button
                 variant="primary"
                 size="sm"
-                onClick={() => navigate('/app/generate')}
+                onClick={() => navigate('/app/generate/text')}
               >
                 开始使用
               </Button>

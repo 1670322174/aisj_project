@@ -1,5 +1,5 @@
-// 作用：描述一个可执行的 ComfyUI 工作流及其输入映射。
-// 通过配置化节点映射接入 7 个工作流，避免在 Controller 或 ComfyUIService 中写 7 套 if/else。
+// 作用：描述一个可由 ComfyUI Server 执行的工作流及其输入映射。
+// 通过配置化节点映射接入 7 个工作流，避免在 Controller 或旧服务中写 7 套 if/else。
 
 namespace InteriorDesignWeb.Services.AI;
 
@@ -11,7 +11,7 @@ public class WorkflowDefinition
 
     public string Description { get; init; } = string.Empty;
 
-    public string ProviderType { get; init; } = "ComfyUI";
+    public string ProviderType { get; init; } = "ComfyUIServer";
 
     public string WorkflowFilePath { get; init; } = string.Empty;
 

@@ -7,6 +7,32 @@ const DEFAULT_HEADERS: Record<string, string> = {
   'Accept': 'application/json',
 }
 
+function normalizeRequestError(error: unknown): Error {
+  if (error instanceof TypeError) {
+    return new Error('无法连接到服务端，请稍后重试')
+  }
+  if (error instanceof Error) {
+    const message = error.message.toLowerCase()
+    if (message.includes('failed to fetch') || message.includes('networkerror') || message.includes('load failed')) {
+      return new Error('无法连接到服务端，请稍后重试')
+    }
+    return error
+  }
+  return new Error('网络请求异常，请稍后重试')
+}
+
+function buildHeaders(options: RequestInit, token?: string | null): Record<string, string> {
+  const headers: Record<string, string> = {
+    ...DEFAULT_HEADERS,
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    ...(options.headers as Record<string, string> | undefined),
+  }
+
+  // 浏览器必须自行生成 multipart/form-data 的 boundary。
+  if (options.body instanceof FormData) delete headers['Content-Type']
+  return headers
+}
+
 /* ─────────────────────────────────────────
    统一响应处理
 ───────────────────────────────────────── */
@@ -45,15 +71,11 @@ export async function request(
   try {
     const response = await fetch(`${BASE_URL}${endpoint}`, {
       ...options,
-      headers: {
-        ...DEFAULT_HEADERS,
-        ...(options.headers as Record<string, string> | undefined),
-      },
+      headers: buildHeaders(options),
     })
     return await handleResponse(response)
   } catch (error) {
-    if (error instanceof Error) throw error
-    throw new Error('网络请求异常')
+    throw normalizeRequestError(error)
   }
 }
 
@@ -71,11 +93,7 @@ export async function requestWithAuth(
   try {
     const response = await fetch(`${BASE_URL}${endpoint}`, {
       ...options,
-      headers: {
-        ...DEFAULT_HEADERS,
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        ...(options.headers as Record<string, string> | undefined),
-      },
+      headers: buildHeaders(options, token),
     })
 
     // 401：清除 token，派发事件，抛出错误
@@ -87,7 +105,6 @@ export async function requestWithAuth(
 
     return await handleResponse(response)
   } catch (error) {
-    if (error instanceof Error) throw error
-    throw new Error('网络请求异常')
+    throw normalizeRequestError(error)
   }
 }

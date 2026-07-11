@@ -45,8 +45,15 @@
     "AIBaseUrl": "https://your-ai-bucket.cos.ap-guangzhou.myqcloud.com"
   },
   "ComfyUI": {
-    "ApiUrl": "http://your-server:6889/prompt",
-    "ImageUrl": "http://your-server:6889/api/view?filename=",
-    "WorkflowName": "FLUX-workflow-CephalonCloud.json"
+    "ApiUrl": "http://192.168.1.20:8188/",
+    "AccountApiKey": "",
+    "AuthorizationHeader": "",
+    "ClientId": "interior-design-web",
+    "RequestTimeoutMinutes": 15,
+    "PollIntervalSeconds": 3,
+    "MaxPollAttempts": 600,
+    "MaxUploadBytes": 52428800,
+    "UseProxy": false,
+    "AllowInvalidCertificate": false
   }
 }

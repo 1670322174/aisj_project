@@ -1,12 +1,12 @@
-// 作用：集中注册 AI 生图相关基础设施。
-// 当前阶段保留已有 ComfyUI / Flux 工作流能力，同时注册新的 AIJob 任务中心和 7 个工作流接入地基。
-// 7 个工作流通过 WorkflowRegistry + WorkflowBuilder 配置化接入，避免在 Controller 中堆 if/else。
+// 作用：集中注册 AI 工作流、ComfyUI Server Provider、任务中心和额度服务。
+// 当前后端只保留一条 ComfyUI Server 执行链路，不注册 Comfy Cloud 或旧 /api/flux 服务。
 
+using System.Net.Http.Headers;
 using InteriorDesignWeb.Config;
+using InteriorDesignWeb.Providers.AI;
 using InteriorDesignWeb.Repositories.AI;
 using InteriorDesignWeb.Services;
 using InteriorDesignWeb.Services.AI;
-using InteriorDesignWeb.Providers.AI;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace InteriorDesignWeb.Extensions;
@@ -18,28 +18,62 @@ public static class AIInfrastructureServiceExtensions
         IConfiguration configuration,
         IWebHostEnvironment environment)
     {
-        var comfyApiUrl = configuration["ComfyUI:ApiUrl"];
+        var section = configuration.GetSection(ComfyUIServerOptions.SectionName);
+        var apiUrl = section["ApiUrl"];
+        var accountApiKey = section["AccountApiKey"];
+        var authorizationHeader = section["AuthorizationHeader"];
 
-        if (string.IsNullOrWhiteSpace(comfyApiUrl))
+        if (string.IsNullOrWhiteSpace(apiUrl)
+            || !Uri.TryCreate(EnsureTrailingSlash(apiUrl), UriKind.Absolute, out var serverBaseUri))
         {
-            throw new InvalidOperationException("ComfyUI:ApiUrl 未配置。");
+            throw new InvalidOperationException(
+                "ComfyUI:ApiUrl 未配置或格式无效，例如 http://192.168.1.20:8188/。");
         }
 
-        // ComfyUI 作为当前阶段真实生图 Provider，后续会降级为 ComfyUIProvider / Client。
+        // 当前 7 个工作流均包含 Partner Nodes，因此启动时要求配置账号 API Key。
+        if (string.IsNullOrWhiteSpace(accountApiKey))
+        {
+            throw new InvalidOperationException(
+                "ComfyUI:AccountApiKey 未配置。建议使用环境变量 ComfyUI__AccountApiKey。");
+        }
+
+        services.Configure<ComfyUIServerOptions>(section);
+
         services.AddHttpClient("ComfyUI", client =>
         {
-            client.BaseAddress = new Uri(comfyApiUrl);
-            client.Timeout = TimeSpan.FromMinutes(10);
+            client.BaseAddress = serverBaseUri;
+            client.Timeout = TimeSpan.FromMinutes(
+                int.TryParse(section["RequestTimeoutMinutes"], out var minutes)
+                    ? Math.Clamp(minutes, 1, 60)
+                    : 15);
+            client.DefaultRequestHeaders.Accept.Add(
+                new MediaTypeWithQualityHeaderValue("application/json"));
+
+            // 可选：远程 ComfyUI 前方使用 Nginx/网关时，为入口添加 Bearer 或 Basic 鉴权。
+            if (!string.IsNullOrWhiteSpace(authorizationHeader))
+            {
+                client.DefaultRequestHeaders.TryAddWithoutValidation(
+                    "Authorization",
+                    authorizationHeader);
+            }
         })
         .ConfigurePrimaryHttpMessageHandler(() =>
         {
+            var useProxy = bool.TryParse(section["UseProxy"], out var proxyEnabled)
+                && proxyEnabled;
+            var allowInvalidCertificate = bool.TryParse(
+                    section["AllowInvalidCertificate"],
+                    out var certificateEnabled)
+                && certificateEnabled;
+
             var handler = new HttpClientHandler
             {
-                UseProxy = false,
+                UseProxy = useProxy,
                 Proxy = null
             };
 
-            if (environment.IsDevelopment())
+            // 只允许开发环境显式跳过自签名证书验证，生产环境禁止。
+            if (environment.IsDevelopment() && allowInvalidCertificate)
             {
                 handler.ServerCertificateCustomValidationCallback =
                     HttpClientHandler.DangerousAcceptAnyServerCertificateValidator;
@@ -49,32 +83,27 @@ public static class AIInfrastructureServiceExtensions
         });
 
         services.Configure<RoleLimitsOptions>(
-            configuration.GetSection("RoleLimits")
-        );
+            configuration.GetSection("RoleLimits"));
 
-        // 旧 AI 生图链路：当前仍保留，保证 /api/flux/* 不被破坏。
-        services.TryAddScoped<FluxWorkflowService>();
-        services.TryAddScoped<JobTrackingService>();
-        services.TryAddScoped<ComfyUIService>();
-
-        // 新 AI 任务中心：后续作为统一主入口。
         services.TryAddScoped<IAIJobRepository, AIJobRepository>();
         services.TryAddScoped<IAIJobService, AIJobService>();
 
-        // 7 个工作流接入地基：工作流注册、工作流构建、Provider 抽象、结果保存和统一提交服务。
         services.TryAddSingleton<IWorkflowRegistry, WorkflowRegistry>();
         services.TryAddScoped<IWorkflowBuilder, WorkflowBuilder>();
-        services.TryAddScoped<IAIProvider, ComfyUIProvider>();
+        services.TryAddScoped<IAIProvider, ComfyUIServerProvider>();
         services.TryAddScoped<IAIResultService, AIResultService>();
         services.TryAddScoped<IAIGenerationService, AIGenerationService>();
 
-        // 额度和角色限制：必须同时注册接口和实现，兼容现有 Controller / Service 注入方式。
         services.TryAddScoped<IRoleLimitService, RoleLimitService>();
         services.TryAddScoped<RoleLimitService>();
-
         services.TryAddScoped<IQuotaService, QuotaService>();
         services.TryAddScoped<QuotaService>();
 
         return services;
+    }
+
+    private static string EnsureTrailingSlash(string value)
+    {
+        return value.EndsWith('/') ? value : value + "/";
     }
 }

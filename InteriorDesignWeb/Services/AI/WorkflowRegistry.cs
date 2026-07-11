@@ -1,5 +1,5 @@
-// 作用：注册当前项目 workflow 目录中的 7 个 ComfyUI API 工作流。
-// 本类只维护工作流元数据和节点映射，不负责执行 ComfyUI、不负责保存结果。
+// 作用：注册当前项目 workflow 目录中的 7 个 ComfyUI API 格式工作流。
+// 本类只维护工作流元数据和节点映射，不负责调用 ComfyUI Server 或保存结果。
 
 using InteriorDesignWeb.Application.Common;
 using Microsoft.AspNetCore.Http;

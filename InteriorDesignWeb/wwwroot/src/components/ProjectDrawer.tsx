@@ -5,7 +5,6 @@ import { X, LayoutGrid, Rows, Trash2, Loader2, AlertCircle } from 'lucide-react'
 import { projectsApi } from '../api/modules/projects'
 import type { NormalizedProjectImage } from '../api/modules/projects'
 import type { Project } from '../api/modules/projects'
-import { imagesApi } from '../api/modules/images'
 import ImageLightbox from './ImageLightbox'
 import type { ImageItem } from './ImageLightbox'
 
@@ -54,6 +53,7 @@ interface Props {
 ───────────────────────────────────────── */
 interface ImageCardProps {
   image:      NormalizedProjectImage
+  projectId:  string
   compact?:   boolean
   onClick:    () => void
   onRemove:   () => void
@@ -62,19 +62,34 @@ interface ImageCardProps {
 
 function ImageCard({
   image,
+  projectId,
   compact = false,
   onClick,
   onRemove,
   isRemoving,
 }: ImageCardProps) {
   const [imgError, setImgError] = useState(false)
+  const [thumbnailSrc, setThumbnailSrc] = useState('')
 
   const containerClass = compact
     ? 'w-40 h-[120px] flex-shrink-0'
     : 'aspect-[4/3] w-full'
 
-  // ✅ 关键修复：通过 imageId 构造正确的缩略图接口地址
-  const thumbnailSrc = imagesApi.getThumbnailUrl(image.imageId)
+  useEffect(() => {
+    let disposed = false
+    setImgError(false)
+    setThumbnailSrc('')
+
+    projectsApi.fetchProjectImageMedia(projectId, image.relationID, 'thumbnail')
+      .then((url) => {
+        if (!disposed) setThumbnailSrc(url)
+      })
+      .catch(() => {
+        if (!disposed) setImgError(true)
+      })
+
+    return () => { disposed = true }
+  }, [image.relationID, projectId])
 
   return (
     <div
@@ -93,7 +108,7 @@ function ImageCard({
       />
 
       {/* 真实缩略图（使用构造后的接口地址） */}
-      {!imgError && (
+      {!imgError && thumbnailSrc && (
         <img
           src={thumbnailSrc}
           alt={getRoomLabel(image.room)}
@@ -190,6 +205,7 @@ function EmptyState({ message }: { message: string }) {
 ───────────────────────────────────────── */
 export default function ProjectDrawer({ project, onClose }: Props) {
   /* ── UI 状态 ── */
+  const [displayProject, setDisplayProject] = useState<Project | null>(null)
   const [viewMode, setViewMode]       = useState<ViewMode>('filter')
   const [selectedTag, setSelectedTag] = useState<string>('all')
   const [images, setImages]           = useState<NormalizedProjectImage[]>([])
@@ -217,6 +233,7 @@ export default function ProjectDrawer({ project, onClose }: Props) {
       if (closeTimerRef.current) clearTimeout(closeTimerRef.current)
 
       setIsMounted(true)
+      setDisplayProject(project)
       setSelectedTag('all')
       setViewMode('filter')
       setLbIndex(-1)
@@ -230,7 +247,7 @@ export default function ProjectDrawer({ project, onClose }: Props) {
       })
 
       loadImages(project.projectID)
-    } else {
+    } else if (displayProject) {
       handleClose()
     }
 
@@ -266,6 +283,7 @@ export default function ProjectDrawer({ project, onClose }: Props) {
 
     closeTimerRef.current = setTimeout(() => {
       setIsMounted(false)
+      setDisplayProject(null)
       setImages([])
       setSelectedTag('all')
       setViewMode('filter')
@@ -323,13 +341,13 @@ export default function ProjectDrawer({ project, onClose }: Props) {
      移除图片
   ───────────────────────────────────────── */
   const handleRemoveImage = useCallback(async (image: NormalizedProjectImage) => {
-    if (!project) return
+    if (!displayProject) return
 
     setRemovingId(image.relationID)
     setRemoveError(null)
 
     try {
-      await projectsApi.removeImageFromProject(project.projectID, image.relationID)
+      await projectsApi.removeImageFromProject(displayProject.projectID, image.relationID)
 
       setImages((prev) => prev.filter((img) => img.relationID !== image.relationID))
 
@@ -355,7 +373,7 @@ export default function ProjectDrawer({ project, onClose }: Props) {
     } finally {
       setRemovingId(null)
     }
-  }, [project, lbIndex])
+  }, [displayProject, lbIndex])
 
   /* ─────────────────────────────────────────
      Lightbox 工具
@@ -364,7 +382,7 @@ export default function ProjectDrawer({ project, onClose }: Props) {
     (list: NormalizedProjectImage[]): LbImage[] =>
       list.map((img) => ({
         id:     img.relationID,
-        src:    img.thumbnailUrl,
+        src:    '',
         label:  getRoomLabel(img.room),
         source: img.isAi ? 'ai' : 'custom',
       })),
@@ -374,14 +392,10 @@ export default function ProjectDrawer({ project, onClose }: Props) {
   const loadOriginal = useCallback(
     (index: number, list: LbImage[]) => {
       const item = list[index]
-      if (!item || item.src.startsWith('blob:')) return
+      if (!item || !displayProject || item.src.startsWith('blob:')) return
 
-      // 通过 relationID 找到对应的 imageId
-      const imgRecord = images.find((img) => img.relationID === item.id)
-      if (!imgRecord) return
-
-      imagesApi
-        .fetchOriginalAsBlob(imgRecord.imageId)
+      projectsApi
+        .fetchProjectImageMedia(displayProject.projectID, item.id, 'original')
         .then((blobUrl) => {
           setLbImages((prev) =>
             prev.map((lb, i) => (i === index ? { ...lb, src: blobUrl } : lb)),
@@ -389,7 +403,7 @@ export default function ProjectDrawer({ project, onClose }: Props) {
         })
         .catch(() => {})
     },
-    [images],
+    [displayProject],
   )
 
   const openLightbox = useCallback(
@@ -422,15 +436,15 @@ export default function ProjectDrawer({ project, onClose }: Props) {
   /* ─────────────────────────────────────────
      不挂载时不渲染
   ───────────────────────────────────────── */
-  if (!isMounted) return null
+  if (!isMounted || !displayProject) return null
 
   return ReactDOM.createPortal(
     <div className="fixed inset-0 z-[200]">
 
       {/* ── 背景蒙层 ── */}
       <div
-        className="absolute inset-0 bg-black/65 backdrop-blur-sm
-                   transition-opacity duration-300"
+        className="absolute inset-0 bg-black/70
+                   transition-opacity duration-200"
         style={{ opacity: isVisible ? 1 : 0 }}
         onClick={handleClose}
       />
@@ -439,7 +453,7 @@ export default function ProjectDrawer({ project, onClose }: Props) {
       <div
         className="absolute top-0 right-0 h-full flex flex-col
                    bg-[var(--bg-base)] border-l border-[var(--border-default)]
-                   shadow-2xl transition-transform duration-300 ease-out"
+                   shadow-xl transition-transform duration-[250ms] ease-out will-change-transform"
         style={{
           width:     'min(82vw, 1000px)',
           minWidth:  '600px',
@@ -454,11 +468,11 @@ export default function ProjectDrawer({ project, onClose }: Props) {
             {/* 左侧：标题 + 描述 */}
             <div className="min-w-0 flex-1">
               <h2 className="text-xl font-semibold text-[var(--text-primary)] truncate">
-                {project?.name ?? ''}
+                {displayProject.name}
               </h2>
-              {project?.description && (
+              {displayProject.description && (
                 <p className="mt-1 text-sm text-[var(--text-secondary)] truncate">
-                  {project.description}
+                  {displayProject.description}
                 </p>
               )}
             </div>
@@ -607,6 +621,7 @@ export default function ProjectDrawer({ project, onClose }: Props) {
                     <ImageCard
                       key={img.relationID}
                       image={img}
+                      projectId={displayProject.projectID}
                       isRemoving={removingId === img.relationID}
                       onClick={() => openLightbox(idx, filteredImages)}
                       onRemove={() => handleRemoveImage(img)}
@@ -657,6 +672,7 @@ export default function ProjectDrawer({ project, onClose }: Props) {
                           <ImageCard
                             key={img.relationID}
                             image={img}
+                            projectId={displayProject.projectID}
                             compact
                             isRemoving={removingId === img.relationID}
                             onClick={() => openLightbox(idx, groupImgs)}

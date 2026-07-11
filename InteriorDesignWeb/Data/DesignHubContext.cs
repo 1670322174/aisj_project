@@ -103,8 +103,20 @@ public class DesignHubContext : DbContext
             .HasForeignKey(pi => pi.CreatedByUserID)
             .OnDelete(DeleteBehavior.SetNull);
 
+        // MySQL 唯一索引允许多行 NULL，因此两组索引可分别阻止普通图和 AI 图重复加入同一方案。
+        modelBuilder.Entity<ProjectImage>()
+            .HasIndex(pi => new { pi.ProjectID, pi.ImageID })
+            .IsUnique();
+
+        modelBuilder.Entity<ProjectImage>()
+            .HasIndex(pi => new { pi.ProjectID, pi.AiImageID })
+            .IsUnique();
+
         modelBuilder.Entity<AiGenerationJob>()
             .HasKey(e => e.JobId);
+
+        modelBuilder.Entity<AiGenerationJob>()
+            .HasIndex(job => new { job.UserID, job.IsDeleted, job.CreatedAt });
 
         modelBuilder.Entity<AiGenerationJob>()
             .HasOne(j => j.User)
@@ -116,7 +128,14 @@ public class DesignHubContext : DbContext
             .HasOne(img => img.AiGenerationJob)
             .WithMany(job => job.Images)
             .HasForeignKey(img => img.JobId)
-            .OnDelete(DeleteBehavior.Cascade);
+            .OnDelete(DeleteBehavior.SetNull);
+
+        modelBuilder.Entity<AiGenerationJobImage>()
+            .HasIndex(img => new { img.RetentionStatus, img.CleanupEligibleAt });
+
+        modelBuilder.Entity<AiGenerationJobImage>()
+            .HasIndex(img => new { img.JobId, img.OutputKey })
+            .IsUnique();
 
         modelBuilder.Entity<AiGenerationJobImage>()
             .HasOne(img => img.User)

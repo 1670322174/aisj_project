@@ -5,6 +5,12 @@ using InteriorDesignWeb.Extensions;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// Windows EventLog may be unavailable in local development or restricted
+// hosting environments. A logging failure must never abort an API request.
+builder.Logging.ClearProviders();
+builder.Logging.AddConsole();
+builder.Logging.AddDebug();
+
 // 基础能力注册
 builder.Services.AddMemoryCache();
 builder.Services.AddApplicationControllers();

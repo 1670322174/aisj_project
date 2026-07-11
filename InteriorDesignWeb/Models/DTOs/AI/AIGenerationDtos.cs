@@ -1,5 +1,5 @@
 // 作用：定义统一 AI 生图入口使用的请求、响应和工作流选项 DTO。
-// 本文件服务于 /api/ai/generations，不直接依赖具体 ComfyUI 节点实现。
+// 本文件服务于 /api/ai/generations，不直接依赖具体 ComfyUI Server 节点实现。
 
 namespace InteriorDesignWeb.Models.DTOs.AI;
 
@@ -36,12 +36,12 @@ public class AIGenerationSubmitRequest
     public int? RoomId { get; set; }
 
     /// <summary>
-    /// 常用源图文件名。应先通过 /api/ai/generations/upload 上传到 ComfyUI 获得。
+    /// 常用源图文件名。应先通过 /api/ai/generations/upload 上传到 ComfyUI Server 获得。
     /// </summary>
     public string? SourceImageName { get; set; }
 
     /// <summary>
-    /// 常用参考图文件名。应先通过 /api/ai/generations/upload 上传到 ComfyUI 获得。
+    /// 常用参考图文件名。应先通过 /api/ai/generations/upload 上传到 ComfyUI Server 获得。
     /// </summary>
     public string? ReferenceImageName { get; set; }
 
@@ -56,7 +56,7 @@ public class AIGenerationSubmitRequest
     public string? LastFrameImageName { get; set; }
 
     /// <summary>
-    /// 通用图片输入映射。key 使用 sourceImage/referenceImage/firstFrame/lastFrame 等字段名，value 是 ComfyUI 文件名。
+    /// 通用图片输入映射。key 使用 sourceImage/referenceImage/firstFrame/lastFrame 等字段名，value 是 ComfyUI Server 文件名。
     /// </summary>
     public Dictionary<string, string>? InputImages { get; set; }
 
@@ -104,7 +104,7 @@ public class WorkflowOptionDto
 
     public string Description { get; set; } = string.Empty;
 
-    public string ProviderType { get; set; } = "ComfyUI";
+    public string ProviderType { get; set; } = "ComfyUIServer";
 
     public string OutputType { get; set; } = "image";
 

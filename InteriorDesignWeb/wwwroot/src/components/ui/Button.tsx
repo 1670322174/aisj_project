@@ -15,11 +15,11 @@ export function Button({
   ...props
 }: ButtonProps) {
   const base =
-    'inline-flex items-center justify-center gap-2 font-medium rounded-xl transition-all duration-200 cursor-pointer select-none disabled:opacity-40 disabled:pointer-events-none';
+    'inline-flex items-center justify-center gap-2 font-semibold rounded-xl transition-all duration-200 cursor-pointer select-none disabled:opacity-40 disabled:pointer-events-none';
 
   const sizes = {
-    sm: 'h-8 px-3 text-xs',
-    md: 'h-9 px-4 text-sm',
+    sm: 'h-9 px-3 text-[13px]',
+    md: 'h-10 px-4 text-sm',
     lg: 'h-11 px-6 text-sm',
   };
 

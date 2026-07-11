@@ -449,26 +449,19 @@
                 throw new KeyNotFoundException($"图片ID {aiImageId} 未找到");
             }
 
-            // 2. 获取COS的基础URL
-            var cosBaseUrl = _config["COS:AIBaseUrl"];  // 需要确保在配置文件中正确设置 COS 基础 URL，例如：https://your-cos-url.com
+            // 2. 对象路径只在后端解析；浏览器始终访问受控媒体接口。
+            var wantsThumbnail = type.Equals("thumbnail", StringComparison.OrdinalIgnoreCase);
+            var imagePath = wantsThumbnail && !string.IsNullOrWhiteSpace(jobImage.ThumbnailPath)
+                ? GenerateAIPublicUrl(jobImage.ThumbnailPath)
+                : jobImage.ImageUrl;
 
-            if (string.IsNullOrEmpty(cosBaseUrl))
+            if (string.IsNullOrWhiteSpace(imagePath) && !string.IsNullOrWhiteSpace(jobImage.CosPath))
             {
-                throw new InvalidOperationException("COS基础URL未配置");
+                imagePath = GenerateAIPublicUrl(jobImage.CosPath);
             }
 
-            // 3. 根据请求的类型选择图片路径
-            string imagePath = type.ToLower() == "thumbnail" ? jobImage.ThumbnailPath : jobImage.ImageUrl;
-
-            // 如果是缩略图，构建完整的URL
-            if (type.ToLower() == "thumbnail" && !string.IsNullOrEmpty(jobImage.ThumbnailPath))
-            {
-                imagePath = new Uri(new Uri(cosBaseUrl), jobImage.ThumbnailPath).ToString();
-            }
-            else if (string.IsNullOrEmpty(imagePath))
-            {
+            if (string.IsNullOrWhiteSpace(imagePath))
                 throw new InvalidOperationException("图片路径无效");
-            }
 
             // 4. 获取COS中的图像流
             var (imageStream, contentType) = await GetImageStreamFromCos(imagePath);

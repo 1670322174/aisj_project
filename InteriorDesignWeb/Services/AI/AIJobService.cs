@@ -1,8 +1,6 @@
 // 作用：实现 AI 生成任务中心的核心业务逻辑。
-// 当前阶段只管理任务生命周期，不直接接入 ComfyUI，也不处理 7 个具体工作流。
+// 任务创建由 AIGenerationService 负责，本服务只管理查询与通用状态更新。
 
-using System.Text.Json;
-using System.Text.Json.Serialization;
 using InteriorDesignWeb.Application.Common;
 using InteriorDesignWeb.Models.DTOs.AI;
 using InteriorDesignWeb.Models.Entities;
@@ -16,71 +14,12 @@ public class AIJobService : IAIJobService
     private readonly IAIJobRepository _repository;
     private readonly ILogger<AIJobService> _logger;
 
-    private static readonly JsonSerializerOptions JsonOptions = new()
-    {
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
-    };
-
     public AIJobService(
         IAIJobRepository repository,
         ILogger<AIJobService> logger)
     {
         _repository = repository;
         _logger = logger;
-    }
-
-    public async Task<AIJobDto> CreateJobAsync(
-        CreateAIJobRequest request,
-        int? userId,
-        CancellationToken cancellationToken = default)
-    {
-        if (string.IsNullOrWhiteSpace(request.WorkflowCode))
-        {
-            throw AppException.Validation("WorkflowCode 不能为空。");
-        }
-
-        var jobId = Guid.NewGuid().ToString("N");
-
-        // 当前阶段还没有提交到真实模型，所以 PromptId 先使用本地 JobId 占位。
-        // 后续接入 ComfyUI 后，ProviderJobId / PromptId 会更新为真实的 ComfyUI prompt_id。
-        var inputJson = JsonSerializer.Serialize(request, JsonOptions);
-        var parametersJson = JsonSerializer.Serialize(
-            request.Parameters ?? new Dictionary<string, object?>(),
-            JsonOptions);
-
-        var job = new AiGenerationJob
-        {
-            JobId = jobId,
-            PromptId = jobId,
-            ProviderJobId = null,
-            UserID = userId,
-            Status = AIJobStatus.Created,
-            WorkflowCode = request.WorkflowCode,
-            ModelCode = request.ModelCode,
-            ProviderType = string.IsNullOrWhiteSpace(request.ProviderType)
-                ? "ComfyUI"
-                : request.ProviderType,
-            Prompt = request.Prompt,
-            NegativePrompt = request.NegativePrompt,
-            ParametersJson = parametersJson,
-            InputJson = inputJson,
-            Progress = "0",
-            ProgressValue = 0,
-            CostUnits = request.CostUnits <= 0 ? 1 : request.CostUnits,
-            CreatedAt = DateTime.UtcNow
-        };
-
-        await _repository.AddAsync(job, cancellationToken);
-        await _repository.SaveChangesAsync(cancellationToken);
-
-        _logger.LogInformation(
-            "AI任务已创建。JobId={JobId}, UserID={UserID}, WorkflowCode={WorkflowCode}",
-            job.JobId,
-            job.UserID,
-            job.WorkflowCode);
-
-        return ToDto(job);
     }
 
     public async Task<AIJobDto?> GetJobAsync(
@@ -134,7 +73,7 @@ public class AIJobService : IAIJobService
         return images.Select(image => new AIJobResultDto
         {
             AiImageID = image.AiImageID,
-            JobId = image.JobId,
+            JobId = image.JobId ?? jobId,
             ImageUrl = image.ImageUrl,
             CosPath = image.CosPath,
             ThumbnailPath = image.ThumbnailPath,
@@ -142,6 +81,47 @@ public class AIJobService : IAIJobService
             MetadataJson = image.MetadataJson,
             CreatedAt = image.CreatedAt
         }).ToList();
+    }
+
+    public async Task DeleteJobAsync(
+        string jobId,
+        int userId,
+        CancellationToken cancellationToken = default)
+    {
+        var job = await _repository.GetByIdAsync(jobId, userId, cancellationToken);
+        if (job == null)
+        {
+            throw new AppException(
+                ErrorCodes.AiJobNotFound,
+                "AI任务不存在或无权访问。",
+                StatusCodes.Status404NotFound);
+        }
+
+        var canDelete = job.Status is AIJobStatus.Succeeded
+            or AIJobStatus.Failed
+            or AIJobStatus.Cancelled
+            or AIJobStatus.Timeout;
+        if (!canDelete)
+        {
+            throw new AppException(
+                ErrorCodes.Conflict,
+                "运行中的任务不能删除，请先取消任务或等待任务结束。",
+                StatusCodes.Status409Conflict);
+        }
+
+        var detachedAt = DateTime.UtcNow;
+        await _repository.HardDeleteAsync(
+            job,
+            userId,
+            detachedAt,
+            detachedAt.AddDays(7),
+            cancellationToken);
+
+        _logger.LogInformation(
+            "用户永久删除AI任务条目。图片资产已解除任务关联。UserID={UserID}, JobId={JobId}, ImageCount={ImageCount}",
+            userId,
+            jobId,
+            job.Images.Count);
     }
 
     public async Task MarkProcessingAsync(
@@ -232,6 +212,7 @@ public class AIJobService : IAIJobService
             WorkflowCode = job.WorkflowCode,
             ModelCode = job.ModelCode,
             ProviderType = job.ProviderType,
+            ProviderJobId = job.ProviderJobId,
             Prompt = job.Prompt,
             NegativePrompt = job.NegativePrompt,
             ProgressValue = job.ProgressValue,

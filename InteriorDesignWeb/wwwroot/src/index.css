@@ -2,25 +2,26 @@
 
 /* ─── CSS Variables: Dark (default) ─── */
 :root {
-  --bg-base: #0a0b0f;
-  --bg-card: #111318;
-  --bg-card-hover: #161820;
-  --bg-sidebar: #0d0e13;
-  --bg-input: #13141a;
-  --bg-overlay: rgba(10, 11, 15, 0.85);
+  color-scheme: dark;
+  --bg-base: #0a0e15;
+  --bg-card: #111721;
+  --bg-card-hover: #182130;
+  --bg-sidebar: #0d131d;
+  --bg-input: #0e1520;
+  --bg-overlay: rgba(7, 11, 17, 0.88);
 
-  --border-subtle: rgba(255, 255, 255, 0.07);
-  --border-default: rgba(255, 255, 255, 0.1);
-  --border-strong: rgba(255, 255, 255, 0.18);
+  --border-subtle: rgba(205, 220, 255, 0.08);
+  --border-default: rgba(205, 220, 255, 0.13);
+  --border-strong: rgba(205, 220, 255, 0.23);
 
-  --text-primary: rgba(255, 255, 255, 0.95);
-  --text-secondary: rgba(255, 255, 255, 0.5);
-  --text-tertiary: rgba(255, 255, 255, 0.3);
-  --text-placeholder: rgba(255, 255, 255, 0.2);
+  --text-primary: rgba(245, 248, 255, 0.96);
+  --text-secondary: rgba(220, 228, 244, 0.72);
+  --text-tertiary: rgba(196, 207, 228, 0.50);
+  --text-placeholder: rgba(190, 202, 224, 0.38);
 
-  --accent: #1B1097;
-  --accent-glow: rgba(27, 16, 151, 0.35);
-  --accent-border: rgba(27, 16, 151, 0.6);
+  --accent: #527cff;
+  --accent-glow: rgba(82, 124, 255, 0.24);
+  --accent-border: rgba(112, 148, 255, 0.58);
 
   --shadow-card: 0 1px 3px rgba(0,0,0,0.4), 0 8px 24px rgba(0,0,0,0.3);
   --shadow-elevated: 0 4px 12px rgba(0,0,0,0.5), 0 24px 48px rgba(0,0,0,0.4);
@@ -39,6 +40,7 @@
 
 /* ─── CSS Variables: Light ─── */
 [data-theme="light"] {
+  color-scheme: light;
   --bg-base: #f2f3f7;
   --bg-card: #ffffff;
   --bg-card-hover: #f9fafb;
@@ -91,7 +93,46 @@ body {
   background-color: var(--bg-base);
   color: var(--text-primary);
   font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans-serif;
-  transition: background-color 0.3s ease, color 0.3s ease;
+  font-size: 14px;
+  line-height: 1.5;
+  transition: background-color 0.28s ease, color 0.28s ease;
+}
+
+button, input, textarea, select { font: inherit; }
+button, a, input, textarea, select {
+  -webkit-tap-highlight-color: transparent;
+  transition-property: color, background-color, border-color, box-shadow, opacity, transform;
+  transition-duration: 180ms;
+  transition-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+}
+input, textarea, select {
+  border-color: var(--border-default);
+  color: var(--text-primary);
+  background-color: var(--bg-input);
+  box-shadow: none;
+}
+input:hover, textarea:hover, select:hover { border-color: var(--border-strong); }
+input:focus, textarea:focus, select:focus {
+  outline: none;
+  border-color: var(--accent-border);
+  box-shadow: 0 0 0 3px var(--accent-glow);
+}
+select {
+  appearance: none;
+  -webkit-appearance: none;
+  padding-right: 2rem !important;
+  background-image: linear-gradient(45deg, transparent 50%, var(--text-tertiary) 50%), linear-gradient(135deg, var(--text-tertiary) 50%, transparent 50%);
+  background-position: calc(100% - 14px) 50%, calc(100% - 10px) 50%;
+  background-size: 4px 4px, 4px 4px;
+  background-repeat: no-repeat;
+}
+option { color: var(--text-primary); background: var(--bg-card); }
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus {
+  -webkit-text-fill-color: var(--text-primary);
+  -webkit-box-shadow: 0 0 0 1000px var(--bg-input) inset;
+  transition: background-color 9999s ease-out;
 }
 
 /* ─── Scrollbar ─── */
@@ -172,11 +213,21 @@ body {
   to { opacity: 1; }
 }
 @keyframes slideUp {
-  from { opacity: 0; transform: translateY(20px) scale(0.97); }
+  from { opacity: 0; transform: translateY(16px) scale(0.985); }
   to { opacity: 1; transform: translateY(0) scale(1); }
 }
-.animate-fade-in { animation: fadeIn 0.2s ease forwards; }
-.animate-slide-up { animation: slideUp 0.25s ease forwards; }
+@keyframes pageEnter {
+  from { opacity: 0; transform: translateY(8px); filter: blur(2px); }
+  to { opacity: 1; transform: translateY(0); filter: blur(0); }
+}
+@keyframes softPop {
+  from { opacity: 0; transform: scale(0.97) translateY(6px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
+}
+.animate-fade-in { animation: fadeIn 180ms ease-out forwards; }
+.animate-slide-up { animation: slideUp 260ms cubic-bezier(0.22, 1, 0.36, 1) forwards; }
+.app-page-enter { animation: pageEnter 320ms cubic-bezier(0.22, 1, 0.36, 1) both; }
+.animate-soft-pop { animation: softPop 220ms cubic-bezier(0.22, 1, 0.36, 1) both; }
 
 /* ─── Gradient text ─── */
 .gradient-text {
@@ -216,12 +267,26 @@ body {
 
 /* ─── Custom focus ─── */
 *:focus-visible {
-  outline: 2px solid var(--accent-border);
-  outline-offset: 2px;
-  border-radius: 4px;
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+  border-radius: 6px;
 }
 
 /* ─── Placeholder ─── */
 ::placeholder {
   color: var(--text-placeholder);
+}
+
+::selection {
+  color: #fff;
+  background: color-mix(in srgb, var(--accent) 72%, transparent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 1ms !important;
+  }
 }

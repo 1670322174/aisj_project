@@ -65,9 +65,9 @@ export function HeroSection() {
           variant="primary"
           size="lg"
           className="w-full sm:w-auto px-8 text-base"
-          onClick={() => navigate('/app/generate')}
+          onClick={() => navigate('/app/generate/text')}
         >
-          免费开始设计
+          开始设计
           <ArrowRight size={16} />
         </Button>
         <Button

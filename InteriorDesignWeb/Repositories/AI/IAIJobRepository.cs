@@ -33,5 +33,12 @@ public interface IAIJobRepository
 
     void Update(AiGenerationJob job);
 
+    Task HardDeleteAsync(
+        AiGenerationJob job,
+        int ownerUserId,
+        DateTime detachedAt,
+        DateTime cleanupEligibleAt,
+        CancellationToken cancellationToken = default);
+
     Task SaveChangesAsync(CancellationToken cancellationToken = default);
 }

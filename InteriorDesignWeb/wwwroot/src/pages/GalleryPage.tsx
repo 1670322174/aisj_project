@@ -1,5 +1,6 @@
 // src/pages/GalleryPage.tsx
-import { useState, useRef, useCallback } from 'react'
+import { useState, useRef, useCallback, useEffect } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import {
   Search,
   ChevronLeft,
@@ -22,8 +23,12 @@ import type { ImageItem } from '../components/ImageLightbox'
    会话状态类型
 ───────────────────────────────────────── */
 type StackEntry = {
-  token: string
-  seed:  string
+  token:         string
+  seed:          string
+  nextPageToken: string
+  hasMore:       boolean
+  pageIndex:     number
+  images:        NormalizedImage[]
 }
 
 type Session = {
@@ -33,15 +38,21 @@ type Session = {
   prevStack:     StackEntry[]
   nextStack:     StackEntry[]
   pageIndex:     number
+  currentPageToken: string
+  currentImages: NormalizedImage[]
 }
 
-const INITIAL_SESSION: Session = {
+function createSession(): Session {
+  return {
   seed:          '',
   nextPageToken: '',
   hasMore:       false,
   prevStack:     [],
   nextStack:     [],
   pageIndex:     0,
+  currentPageToken: '',
+  currentImages: [],
+  }
 }
 
 const PAGE_SIZE = 16
@@ -309,9 +320,11 @@ function Pagination({
    主页面
 ───────────────────────────────────────── */
 export default function GalleryPage() {
+  const [searchParams, setSearchParams] = useSearchParams()
+  const didRestoreRouteRef = useRef(false)
 
   /* ── 搜索会话（useRef，不触发重渲染） ── */
-  const sessionRef = useRef<Session>({ ...INITIAL_SESSION })
+  const sessionRef = useRef<Session>(createSession())
 
   /* ── UI 状态 ── */
   const [searchInput, setSearchInput] = useState<string>('')
@@ -401,6 +414,44 @@ export default function GalleryPage() {
     setPageIndex(s.pageIndex)
   }, [])
 
+  const snapshotCurrentPage = useCallback((): StackEntry | null => {
+    const s = sessionRef.current
+    if (s.currentImages.length === 0) return null
+    return {
+      token: s.currentPageToken,
+      seed: s.seed,
+      nextPageToken: s.nextPageToken,
+      hasMore: s.hasMore,
+      pageIndex: s.pageIndex,
+      images: s.currentImages,
+    }
+  }, [])
+
+  const syncSearchRoute = useCallback((activeKeyword: string, pageToken: string, seed: string, nextPageIndex: number) => {
+    const params: Record<string, string> = {
+      q: activeKeyword,
+      page: String(nextPageIndex + 1),
+    }
+    if (seed) params.seed = seed
+    if (pageToken) params.token = pageToken
+    setSearchParams(params, { replace: true })
+  }, [setSearchParams])
+
+  const restoreSnapshot = useCallback((snapshot: StackEntry) => {
+    const s = sessionRef.current
+    s.seed = snapshot.seed
+    s.nextPageToken = snapshot.nextPageToken
+    s.hasMore = snapshot.hasMore
+    s.pageIndex = snapshot.pageIndex
+    s.currentPageToken = snapshot.token
+    s.currentImages = snapshot.images
+    setImages(snapshot.images)
+    setError(null)
+    setAddingMap({})
+    updateButtonStates()
+    syncSearchRoute(keyword, snapshot.token, snapshot.seed, snapshot.pageIndex)
+  }, [keyword, syncSearchRoute, updateButtonStates])
+
   /* ─────────────────────────────────────
      fetchPage
   ───────────────────────────────────── */
@@ -414,7 +465,8 @@ export default function GalleryPage() {
     const s = sessionRef.current
 
     if (isPush) {
-      s.prevStack.push({ token: s.nextPageToken, seed: s.seed })
+      const current = snapshotCurrentPage()
+      if (current) s.prevStack.push(current)
       s.nextStack = []
     }
 
@@ -432,6 +484,8 @@ export default function GalleryPage() {
       s.seed          = result.seed || seed
       s.nextPageToken = result.nextPageToken
       s.hasMore       = result.hasMore
+      s.currentPageToken = pageToken
+      s.currentImages = result.data
 
       if (isPush) {
         s.pageIndex += 1
@@ -439,13 +493,36 @@ export default function GalleryPage() {
 
       setImages(result.data)
       updateButtonStates()
+      syncSearchRoute(keywordOverride ?? keyword, pageToken, s.seed, s.pageIndex)
     } catch (err) {
       const msg = err instanceof Error ? err.message : '请求失败，请稍后重试'
       setError(msg)
     } finally {
       setIsLoading(false)
     }
-  }, [keyword, updateButtonStates])
+  }, [keyword, snapshotCurrentPage, syncSearchRoute, updateButtonStates])
+
+  useEffect(() => {
+    if (didRestoreRouteRef.current) return
+    didRestoreRouteRef.current = true
+
+    const routeKeyword = searchParams.get('q')?.trim() ?? ''
+    if (!routeKeyword) return
+
+    const routeSeed = searchParams.get('seed') ?? ''
+    const routeToken = searchParams.get('token') ?? ''
+    const routePage = Math.max(1, Number(searchParams.get('page') ?? '1') || 1)
+    sessionRef.current = createSession()
+    sessionRef.current.pageIndex = routePage - 1
+    setSearchInput(routeKeyword)
+    setKeyword(routeKeyword)
+    void fetchPage({
+      pageToken: routeToken,
+      seed: routeSeed,
+      isPush: false,
+      keywordOverride: routeKeyword,
+    })
+  }, [fetchPage, searchParams])
 
   /* ─────────────────────────────────────
      handleSearch
@@ -454,7 +531,7 @@ export default function GalleryPage() {
     const kw = searchInput.trim()
     if (!kw) return
 
-    sessionRef.current = { ...INITIAL_SESSION }
+    sessionRef.current = createSession()
     setKeyword(kw)
     setImages([])
     setError(null)
@@ -482,11 +559,10 @@ export default function GalleryPage() {
     const prev = s.prevStack.pop()
     if (!prev) return
 
-    s.nextStack.push({ token: s.nextPageToken, seed: s.seed })
-    s.pageIndex -= 1
-
-    fetchPage({ pageToken: prev.token, seed: prev.seed, isPush: false })
-  }, [canPrev, isLoading, fetchPage])
+    const current = snapshotCurrentPage()
+    if (current) s.nextStack.push(current)
+    restoreSnapshot(prev)
+  }, [canPrev, isLoading, restoreSnapshot, snapshotCurrentPage])
 
   /* ─────────────────────────────────────
      handleNext
@@ -497,9 +573,9 @@ export default function GalleryPage() {
 
     if (s.nextStack.length > 0) {
       const next = s.nextStack.pop()!
-      s.prevStack.push({ token: s.nextPageToken, seed: s.seed })
-      s.pageIndex += 1
-      fetchPage({ pageToken: next.token, seed: next.seed, isPush: false })
+      const current = snapshotCurrentPage()
+      if (current) s.prevStack.push(current)
+      restoreSnapshot(next)
     } else if (s.hasMore) {
       fetchPage({
         pageToken: s.nextPageToken,
@@ -507,7 +583,7 @@ export default function GalleryPage() {
         isPush:    true,
       })
     }
-  }, [canNext, isLoading, fetchPage])
+  }, [canNext, isLoading, fetchPage, restoreSnapshot, snapshotCurrentPage])
 
   /* ─────────────────────────────────────
      handleRandom
@@ -518,12 +594,13 @@ export default function GalleryPage() {
 
     const newSeed = Math.random().toString(36).slice(2, 10)
 
-    s.prevStack.push({ token: s.nextPageToken, seed: s.seed })
+    const current = snapshotCurrentPage()
+    if (current) s.prevStack.push(current)
     s.nextStack  = []
     s.pageIndex += 1
 
     fetchPage({ pageToken: '', seed: newSeed, isPush: false })
-  }, [canRandom, isLoading, fetchPage])
+  }, [canRandom, isLoading, fetchPage, snapshotCurrentPage])
 
   /* ─────────────────────────────────────
      原图异步加载（Lightbox 用）

@@ -1,8 +1,8 @@
-// 作用：定义 AI Provider 抽象，避免业务层直接依赖 ComfyUI API 细节。
-// 后续可在不改 Controller 的情况下增加 CloudModelProvider 或 MockAIProvider。
+// 作用：定义 AI 工作流执行 Provider 的统一接口。
+// 当前唯一实现是 ComfyUIServerProvider，业务层无需了解 ComfyUI Server 的 HTTP 协议。
 
-using Newtonsoft.Json.Linq;
 using Microsoft.AspNetCore.Http;
+using Newtonsoft.Json.Linq;
 
 namespace InteriorDesignWeb.Providers.AI;
 
@@ -40,7 +40,17 @@ public class AIProviderSubmitResult
 
 public class AIProviderHistoryResult
 {
+    public string Status { get; set; } = "pending";
+
     public bool IsCompleted { get; set; }
+
+    public bool IsFailed { get; set; }
+
+    public bool IsCancelled { get; set; }
+
+    public int ProgressValue { get; set; }
+
+    public string? ErrorMessage { get; set; }
 
     public string RawJson { get; set; } = string.Empty;
 

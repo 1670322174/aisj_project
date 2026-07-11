@@ -1,5 +1,5 @@
-// 作用：定义 AI 生成任务中心的业务接口。
-// 当前阶段只提供任务创建、查询、状态更新能力，不负责调用具体生图模型。
+// 作用：定义 AI 任务查询与状态更新接口。
+// 真实任务只由 IAIGenerationService 创建，本接口不再提供占位任务创建能力。
 
 using InteriorDesignWeb.Application.Common;
 using InteriorDesignWeb.Models.DTOs.AI;
@@ -8,11 +8,6 @@ namespace InteriorDesignWeb.Services.AI;
 
 public interface IAIJobService
 {
-    Task<AIJobDto> CreateJobAsync(
-        CreateAIJobRequest request,
-        int? userId,
-        CancellationToken cancellationToken = default);
-
     Task<AIJobDto?> GetJobAsync(
         string jobId,
         int? userId = null,
@@ -25,6 +20,11 @@ public interface IAIJobService
         CancellationToken cancellationToken = default);
 
     Task<IReadOnlyList<AIJobResultDto>> GetJobResultsAsync(
+        string jobId,
+        int userId,
+        CancellationToken cancellationToken = default);
+
+    Task DeleteJobAsync(
         string jobId,
         int userId,
         CancellationToken cancellationToken = default);

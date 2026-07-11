@@ -1,7 +1,7 @@
 // src/pages/ProjectsPage.tsx
 import { useState, useEffect, useMemo, useCallback } from 'react'
 import ReactDOM from 'react-dom'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useParams } from 'react-router-dom'
 import {
   Search,
   Plus,
@@ -294,6 +294,7 @@ function DeleteModal({
 ───────────────────────────────────────── */
 export default function ProjectsPage() {
   const navigate = useNavigate()
+  const { projectId } = useParams<{ projectId?: string }>()
 
   /* ── 状态 ── */
   const [projects, setProjects]               = useState<Project[]>([])
@@ -322,6 +323,21 @@ export default function ProjectsPage() {
     loadProjects()
   }, [loadProjects])
 
+  useEffect(() => {
+    if (!projectId) {
+      setSelectedProject(null)
+      return
+    }
+    const matched = projects.find(
+      (project) => String(project.projectID) === String(projectId),
+    )
+    if (matched) {
+      setSelectedProject(matched)
+    } else if (!isLoading) {
+      navigate('/app/projects', { replace: true })
+    }
+  }, [isLoading, navigate, projectId, projects])
+
   /* ── 过滤 ── */
   const filteredProjects = useMemo<Project[]>(() => {
     const kw = searchKeyword.trim().toLowerCase()
@@ -349,6 +365,7 @@ export default function ProjectsPage() {
       // 若抽屉正好打开的是被删除的方案，关闭抽屉
       if (selectedProject?.projectID === deleteTarget.projectID) {
         setSelectedProject(null)
+        navigate('/app/projects', { replace: true })
       }
       setDeleteTarget(null)
     } catch (err) {
@@ -357,7 +374,7 @@ export default function ProjectsPage() {
     } finally {
       setIsDeleting(false)
     }
-  }, [deleteTarget, selectedProject])
+  }, [deleteTarget, navigate, selectedProject])
 
   const handleDeleteCancel = useCallback(() => {
     if (isDeleting) return
@@ -506,7 +523,7 @@ export default function ProjectsPage() {
                   key={project.projectID}
                   project={project}
                   index={idx}
-                  onOpen={() => setSelectedProject(project)}
+                  onOpen={() => navigate(`/app/projects/${project.projectID}`)}
                   onDelete={() => {
                     setDeleteError(null)
                     setDeleteTarget(project)
@@ -521,7 +538,7 @@ export default function ProjectsPage() {
       {/* ════════ 方案详情抽屉 ════════ */}
       <ProjectDrawer
         project={selectedProject}
-        onClose={() => setSelectedProject(null)}
+        onClose={() => navigate('/app/projects')}
       />
 
       {/* ════════ 删除确认 Modal ════════ */}
