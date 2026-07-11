@@ -139,7 +139,17 @@ export const useAppStore = create<AppState>()(
       user: null,
 
       login:  (user) => set({ user, isLoginModalOpen: false }),
-      logout: () => set({ user: null }),
+      logout: () => {
+        apiLogout()
+        localStorage.removeItem(ACTIVE_PROJECT_KEY)
+        set({
+          authUser:      null,
+          user:          null,
+          authError:     null,
+          activeProject: null,
+          projects:      [],
+        })
+      },
 
       /* ══════════════════════════════════════
          API 认证状态（原有，完整保留）

@@ -26,6 +26,11 @@ public static class AuthenticationServiceExtensions
             throw new InvalidOperationException("JwtSettings 配置不完整，请检查 Secret、Issuer、Audience。");
         }
 
+        if (Encoding.UTF8.GetByteCount(secret) < 32)
+        {
+            throw new InvalidOperationException("JwtSettings:Secret 必须至少为 32 字节。");
+        }
+
         services
             .AddAuthentication(options =>
             {
@@ -54,6 +59,18 @@ public static class AuthenticationServiceExtensions
 
                 options.Events = new JwtBearerEvents
                 {
+                    OnMessageReceived = context =>
+                    {
+                        if (string.IsNullOrWhiteSpace(context.Token)
+                            && context.Request.Cookies.TryGetValue(
+                                "designhub_access",
+                                out var cookieToken))
+                        {
+                            context.Token = cookieToken;
+                        }
+
+                        return Task.CompletedTask;
+                    },
                     OnTokenValidated = context =>
                     {
                         var logger = context.HttpContext.RequestServices

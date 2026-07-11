@@ -233,7 +233,12 @@ namespace InteriorDesignWeb.Controllers
             catch (Exception ex)
             {
                 _logger.LogError(ex, "获取项目图片失败！");
-                return StatusCode(500, new { Success = false, Message = "发生未处理的系统错误", ExceptionMessage = ex.Message });
+                return StatusCode(500, new
+                {
+                    Success = false,
+                    Message = "发生未处理的系统错误",
+                    RequestId = HttpContext.TraceIdentifier
+                });
             }
         }
 

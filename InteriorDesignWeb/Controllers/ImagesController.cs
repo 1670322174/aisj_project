@@ -109,7 +109,13 @@ namespace InteriorDesignWeb.Controllers
             }
             catch (Exception ex)
             {
-                return StatusCode(500, $"上传失败: {ex.Message}");
+                _logger.LogError(ex, "图片上传失败. RequestId={RequestId}", HttpContext.TraceIdentifier);
+                return StatusCode(500, new
+                {
+                    Code = "UPLOAD_FAILED",
+                    Message = "图片上传失败，请稍后重试",
+                    RequestId = HttpContext.TraceIdentifier
+                });
             }
         }
 
@@ -527,15 +533,23 @@ namespace InteriorDesignWeb.Controllers
             }
             catch (KeyNotFoundException ex)
             {
-                return NotFound(new { Code = "NOT_FOUND", ex.Message });
+                _logger.LogInformation(ex, "图片不存在. ImageId={ImageId}", id);
+                return NotFound(new { Code = "NOT_FOUND", Message = "图片不存在" });
             }
             catch (CosException ex)
             {
-                return StatusCode(502, new { Code = "COS_ERROR", ex.Message });
+                _logger.LogWarning(ex, "COS 图片读取失败. ImageId={ImageId}", id);
+                return StatusCode(502, new { Code = "COS_ERROR", Message = "图片存储服务暂时不可用" });
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new { Code = "SERVER_ERROR", ex.Message });
+                _logger.LogError(ex, "图片读取失败. ImageId={ImageId}", id);
+                return StatusCode(500, new
+                {
+                    Code = "SERVER_ERROR",
+                    Message = "图片读取失败",
+                    RequestId = HttpContext.TraceIdentifier
+                });
             }
         }
 

@@ -17,6 +17,8 @@ namespace InteriorDesignWeb.Services.AI;
 
 public sealed class AIGenerationService : IAIGenerationService
 {
+    private const string SystemNegativePrompt =
+        "low quality,blurry,noise,grainy,overexposed,underexposed,bad lighting,bad composition,distorted,deformed,ugly,messy,unrealistic,cartoon,anime";
     private readonly IWorkflowRegistry _workflowRegistry;
     private readonly IWorkflowBuilder _workflowBuilder;
     private readonly IAIProvider _provider;
@@ -107,6 +109,16 @@ public sealed class AIGenerationService : IAIGenerationService
         var workflow = _workflowRegistry.GetRequired(request.WorkflowCode);
         request.ModelCode ??= workflow.DefaultModelCode;
 
+        var supportsNegativePrompt = !workflow.OutputType.Equals(
+                "video",
+                StringComparison.OrdinalIgnoreCase)
+            || workflow.InputMappings.Any(mapping => mapping.Field.Equals(
+                "negativePrompt",
+                StringComparison.OrdinalIgnoreCase));
+        request.NegativePrompt = supportsNegativePrompt
+            ? ComposeNegativePrompt(request.NegativePrompt)
+            : null;
+
         var workflowJson = _workflowBuilder.Build(workflow, request);
         var jobId = Guid.NewGuid().ToString("N");
         var inputJson = JsonSerializer.Serialize(request, JsonOptions);
@@ -155,13 +167,6 @@ public sealed class AIGenerationService : IAIGenerationService
             await _context.SaveChangesAsync(cancellationToken);
 
             // 请求返回后在独立作用域轮询 ComfyUI Server，避免继续占用前端请求线程。
-            _ = Task.Run(
-                () => MonitorAndSaveResultAsync(
-                    job.JobId,
-                    submitResult.ProviderJobId,
-                    workflow.WorkflowCode),
-                CancellationToken.None);
-
             return new AIGenerationSubmitResponse
             {
                 JobId = job.JobId,
@@ -448,6 +453,20 @@ public sealed class AIGenerationService : IAIGenerationService
             _logger.LogError(ex, "ComfyUI Server 任务后台处理失败。JobId={JobId}", jobId);
             await MarkFailedAsync(jobId, ex.Message);
         }
+    }
+
+    private static string ComposeNegativePrompt(string? userPrompt)
+    {
+        var normalized = userPrompt?.Trim() ?? string.Empty;
+        if (normalized.StartsWith(SystemNegativePrompt, StringComparison.OrdinalIgnoreCase))
+        {
+            normalized = normalized[SystemNegativePrompt.Length..]
+                .TrimStart(' ', ',');
+        }
+
+        return string.IsNullOrWhiteSpace(normalized)
+            ? SystemNegativePrompt
+            : $"{SystemNegativePrompt},{normalized}";
     }
 
     private static AIGenerationSubmitRequest DeserializeRequest(

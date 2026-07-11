@@ -40,5 +40,6 @@ namespace InteriorDesignWeb.Models.Entities
         public DateTime RegisterTime { get; set; }
 
         public List<Project> Projects { get; set; } = new();
+        public List<UserSession> Sessions { get; set; } = new();
     }
 }

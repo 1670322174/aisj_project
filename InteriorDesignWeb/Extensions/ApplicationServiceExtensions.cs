@@ -4,11 +4,33 @@
 using System.Text.Json.Serialization;
 using InteriorDesignWeb.Filters;
 using Microsoft.OpenApi.Models;
+using Microsoft.AspNetCore.RateLimiting;
+using System.Threading.RateLimiting;
 
 namespace InteriorDesignWeb.Extensions;
 
 public static class ApplicationServiceExtensions
 {
+    public static IServiceCollection AddApplicationRateLimiting(this IServiceCollection services)
+    {
+        services.AddRateLimiter(options =>
+        {
+            options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+            options.AddPolicy("auth", context =>
+                RateLimitPartition.GetFixedWindowLimiter(
+                    context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+                    _ => new FixedWindowRateLimiterOptions
+                    {
+                        PermitLimit = 5,
+                        Window = TimeSpan.FromMinutes(1),
+                        QueueLimit = 0,
+                        AutoReplenishment = true
+                    }));
+        });
+
+        return services;
+    }
+
     public static IServiceCollection AddApplicationControllers(this IServiceCollection services)
     {
         services

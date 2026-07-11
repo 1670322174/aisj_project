@@ -1,6 +1,6 @@
 // 作用：封装 AI 工作流、图片上传、任务轮询和结果查询接口。
 // 前端只调用业务 API，不直接访问 ComfyUI Server。
-import { requestWithAuth } from '../client'
+import { refreshAuthSession, requestWithAuth } from '../client'
 import { fetchAuthenticatedMedia } from '../media'
 
 const BASE_URL = (import.meta as unknown as { env: Record<string, string> }).env.VITE_API_BASE as string
@@ -186,6 +186,7 @@ function uploadInputImage(
   file: File,
   fieldName: string,
   onProgress?: (progress: number) => void,
+  hasRetried = false,
 ): Promise<UploadResult> {
   return new Promise((resolve, reject) => {
     const formData = new FormData()
@@ -195,9 +196,7 @@ function uploadInputImage(
 
     const xhr = new XMLHttpRequest()
     xhr.open('POST', `${BASE_URL}/ai/generations/upload`)
-
-    const token = localStorage.getItem('access_token')
-    if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`)
+    xhr.withCredentials = true
     xhr.setRequestHeader('Accept', 'application/json')
 
     xhr.upload.onprogress = (event) => {
@@ -207,7 +206,7 @@ function uploadInputImage(
 
     xhr.onerror = () => reject(new Error('图片上传失败，请检查网络连接'))
     xhr.onabort = () => reject(new Error('图片上传已取消'))
-    xhr.onload = () => {
+    xhr.onload = async () => {
       let body: unknown
       try {
         body = xhr.responseText ? JSON.parse(xhr.responseText) : null
@@ -216,6 +215,10 @@ function uploadInputImage(
       }
 
       if (xhr.status === 401) {
+        if (!hasRetried && await refreshAuthSession()) {
+          uploadInputImage(file, fieldName, onProgress, true).then(resolve, reject)
+          return
+        }
         window.dispatchEvent(new Event('auth:unauthorized'))
         reject(new Error('登录已过期，请重新登录'))
         return

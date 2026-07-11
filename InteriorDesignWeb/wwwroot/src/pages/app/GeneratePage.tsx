@@ -26,6 +26,7 @@ import {
   X,
 } from 'lucide-react'
 import { aiApi, type AIJob, type AIJobResult, type WorkflowOption } from '@/api/modules/ai'
+import { refreshAuthSession } from '@/api/client'
 import { imagesApi } from '@/api/modules/images'
 import { projectsApi, type Room } from '@/api/modules/projects'
 import AssetPickerModal from '@/components/ai/AssetPickerModal'
@@ -64,6 +65,15 @@ const INITIAL_FORM: GenerationFormState = {
   batchSize: 1,
   seed: '',
   duration: 6,
+}
+
+function stripSystemNegativePrompt(value: string): string {
+  const systemPrompt = DEFAULT_NEGATIVE_PROMPT.replace(/,+\s*$/, '').trim()
+  const normalized = value.trim()
+  if (!normalized.toLowerCase().startsWith(systemPrompt.toLowerCase())) {
+    return normalized
+  }
+  return normalized.slice(systemPrompt.length).replace(/^\s*,+\s*/, '').trim()
 }
 
 const INITIAL_ASSETS: FormAssets = {
@@ -112,10 +122,12 @@ async function fetchAssetAsFile(asset: GenerationAsset): Promise<File> {
 
   if (!url) throw new Error(`无法读取“${asset.label}”的原图地址`)
 
-  const token = localStorage.getItem('access_token')
-  const response = await fetch(url, {
-    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+  let response = await fetch(url, {
+    credentials: 'include',
   })
+  if (response.status === 401 && await refreshAuthSession()) {
+    response = await fetch(url, { credentials: 'include' })
+  }
   if (!response.ok) throw new Error(`读取“${asset.label}”失败：HTTP ${response.status}`)
 
   const blob = await response.blob()
@@ -127,6 +139,7 @@ export default function GeneratePage() {
   const params = useParams<{ mode?: string; jobId?: string }>()
   const mode = modeFromRoute(params.mode)
   const routeJobId = params.jobId ?? ''
+  const previousRouteJobIdRef = useRef(routeJobId)
 
   const {
     authUser,
@@ -225,6 +238,18 @@ export default function GeneratePage() {
   }, [])
 
   useEffect(() => {
+    const returningFromJob = Boolean(previousRouteJobIdRef.current) && !routeJobId
+    previousRouteJobIdRef.current = routeJobId
+
+    if (routeJobId) {
+      setForm({ ...INITIAL_FORM, resolution: mode === 'video' ? '720p' : '1K' })
+      setSelectedStyles([])
+      setSelectedWorkflowCode('')
+      setAssets(INITIAL_ASSETS)
+      setPageError('')
+      return
+    }
+
     const saved = localStorage.getItem(draftKey(mode))
     if (saved) {
       try {
@@ -233,7 +258,13 @@ export default function GeneratePage() {
           selectedStyles?: string[]
           workflowCode?: string
         }
-        setForm({ ...INITIAL_FORM, ...parsed.form, resolution: mode === 'video' ? parsed.form?.resolution || '720p' : parsed.form?.resolution || '1K' })
+        setForm({
+          ...INITIAL_FORM,
+          ...parsed.form,
+          prompt: returningFromJob ? '' : parsed.form?.prompt ?? '',
+          negativePrompt: returningFromJob ? '' : stripSystemNegativePrompt(parsed.form?.negativePrompt ?? ''),
+          resolution: mode === 'video' ? parsed.form?.resolution || '720p' : parsed.form?.resolution || '1K',
+        })
         setSelectedStyles(parsed.selectedStyles ?? [])
         setSelectedWorkflowCode(parsed.workflowCode ?? '')
       } catch {
@@ -261,8 +292,9 @@ export default function GeneratePage() {
   }, [selectedWorkflowCode, workflowsForMode])
 
   useEffect(() => {
+    if (routeJobId) return
     localStorage.setItem(draftKey(mode), JSON.stringify({ form, selectedStyles, workflowCode: selectedWorkflowCode }))
-  }, [form, mode, selectedStyles, selectedWorkflowCode])
+  }, [form, mode, routeJobId, selectedStyles, selectedWorkflowCode])
 
   useEffect(() => {
     if (!activeProject) {
@@ -287,7 +319,7 @@ export default function GeneratePage() {
         setForm((current) => ({
           ...current,
           prompt: current.prompt || currentJob.prompt || '',
-          negativePrompt: current.negativePrompt || currentJob.negativePrompt || '',
+          negativePrompt: current.negativePrompt || stripSystemNegativePrompt(currentJob.negativePrompt || ''),
         }))
         setPageError('')
 
@@ -390,11 +422,8 @@ export default function GeneratePage() {
       }
 
       const negativePrompt = supportsNegativePrompt
-        ? (form.negativePrompt.trim() || DEFAULT_NEGATIVE_PROMPT)
+        ? (form.negativePrompt.trim() || null)
         : null
-      if (supportsNegativePrompt && !form.negativePrompt.trim()) {
-        setForm((current) => ({ ...current, negativePrompt: DEFAULT_NEGATIVE_PROMPT }))
-      }
 
       const numericSeed = form.seed.trim() ? Number(form.seed) : Math.floor(Math.random() * 2_147_483_647)
       const parameters: Record<string, unknown> = {
@@ -679,12 +708,12 @@ export default function GeneratePage() {
 
             {supportsNegativePrompt ? (
               <section className="space-y-1.5">
-                <label className="text-xs font-medium text-[var(--text-secondary)]">负面提示词 <span className="font-normal text-[var(--text-tertiary)]">（可为空）</span></label>
+                <label className="text-xs font-medium text-[var(--text-secondary)]">补充负面提示词 <span className="font-normal text-[var(--text-tertiary)]">（可为空）</span></label>
                 <textarea
                   value={form.negativePrompt}
                   disabled={taskBusy}
                   onChange={(event) => updateForm('negativePrompt', event.target.value)}
-                  placeholder="为空时自动使用预设负面提示词"
+                  placeholder="填写你希望额外排除的内容"
                   rows={3}
                   className="w-full rounded-xl text-xs resize-none p-3 bg-[var(--bg-input)] border border-[var(--border-default)] text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent-border)]"
                 />

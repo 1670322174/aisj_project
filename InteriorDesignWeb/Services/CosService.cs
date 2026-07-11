@@ -374,6 +374,32 @@
             return $"{aiBaseUrl}/{objectKey}";
         }
 
+        /// <summary>
+        /// Deletes an AI asset by object key. The caller must verify that the
+        /// database row is no longer referenced by a project before calling.
+        /// </summary>
+        public void DeleteAIObject(string objectKey)
+        {
+            if (string.IsNullOrWhiteSpace(objectKey))
+            {
+                return;
+            }
+
+            var bucket = _config["COS:AIBucket"]
+                ?? throw new ConfigurationException("缺少 AI 存储桶配置: AIBucket");
+            var normalizedKey = objectKey.Replace("\\", "/").TrimStart('/');
+            var result = _cosXml.DeleteObject(new DeleteObjectRequest(bucket, normalizedKey));
+
+            if (result.httpCode is < 200 or >= 300)
+            {
+                throw new CosException(
+                    $"COS 删除失败: HTTP {result.httpCode}",
+                    new InvalidOperationException(result.httpMessage));
+            }
+
+            _urlCache.TryRemove(normalizedKey, out _);
+        }
+
         public async Task<(string Url, string SignedUrl)> GetImageInfoAsync(
         int imageId,
         string? type = null,

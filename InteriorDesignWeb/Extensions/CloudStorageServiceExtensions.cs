@@ -43,6 +43,7 @@ public static class CloudStorageServiceExtensions
         });
 
         services.AddScoped<CosService>();
+        services.AddHostedService<AIAssetCleanupWorker>();
 
         return services;
     }

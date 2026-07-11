@@ -1,4 +1,5 @@
 using InteriorDesignWeb.Data;
+using InteriorDesignWeb.Services;
 using Microsoft.EntityFrameworkCore;
 using MySqlConnector;
 
@@ -30,9 +31,17 @@ public static class DatabaseServiceExtensions
         {
             options.UseMySql(
                 connectionBuilder.ConnectionString,
-                new MySqlServerVersion(new Version(5, 7, 44))
+                new MySqlServerVersion(new Version(5, 7, 44)),
+                mysql => mysql.EnableRetryOnFailure(
+                    maxRetryCount: 3,
+                    maxRetryDelay: TimeSpan.FromSeconds(5),
+                    errorNumbersToAdd: null)
             );
         });
+
+        services.AddHealthChecks()
+            .AddCheck<DatabaseHealthCheck>("database", tags: ["ready"]);
+        services.AddHostedService<UserSessionCleanupWorker>();
 
         return services;
     }

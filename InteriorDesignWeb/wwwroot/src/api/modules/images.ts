@@ -1,5 +1,5 @@
 // src/api/modules/images.ts
-import { requestWithAuth } from '../client'
+import { refreshAuthSession, requestWithAuth } from '../client'
 
 const BASE_URL = (import.meta as unknown as { env: Record<string, string> }).env.VITE_API_BASE as string
 
@@ -67,13 +67,13 @@ async function fetchOriginalAsBlob(imageId: string): Promise<string> {
   const cached = blobCache.get(imageId)
   if (cached) return cached
 
-  const token = localStorage.getItem('access_token')
-
-  const response = await fetch(getOriginalUrl(imageId), {
-    headers: {
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    },
+  let response = await fetch(getOriginalUrl(imageId), {
+    credentials: 'include',
   })
+
+  if (response.status === 401 && await refreshAuthSession()) {
+    response = await fetch(getOriginalUrl(imageId), { credentials: 'include' })
+  }
 
   if (!response.ok) {
     throw new Error(`图片加载失败: ${response.status}`)

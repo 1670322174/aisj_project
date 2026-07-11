@@ -1,5 +1,7 @@
 // 作用：统一读取需要 JWT 的图片/视频文件，并转换为浏览器可展示的 Blob URL。
 
+import { refreshAuthSession } from './client'
+
 const BASE_URL = (import.meta as unknown as { env: Record<string, string> }).env.VITE_API_BASE as string
 const MAX_CACHE_SIZE = 100
 const blobCache = new Map<string, string>()
@@ -29,13 +31,15 @@ export async function fetchAuthenticatedMedia(
     return cached
   }
 
-  const token = localStorage.getItem('access_token')
-  const response = await fetch(`${BASE_URL}${endpoint}`, {
-    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+  let response = await fetch(`${BASE_URL}${endpoint}`, {
+    credentials: 'include',
   })
 
+  if (response.status === 401 && await refreshAuthSession()) {
+    response = await fetch(`${BASE_URL}${endpoint}`, { credentials: 'include' })
+  }
+
   if (response.status === 401) {
-    localStorage.removeItem('access_token')
     window.dispatchEvent(new Event('auth:unauthorized'))
     throw new Error('登录已过期，请重新登录')
   }
@@ -48,4 +52,3 @@ export async function fetchAuthenticatedMedia(
   remember(cacheKey, blobUrl)
   return blobUrl
 }
-

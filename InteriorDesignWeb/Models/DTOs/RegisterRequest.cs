@@ -9,7 +9,7 @@ namespace InteriorDesignWeb.Models.DTOs
         public string Username { get; set; } = string.Empty;
 
         [Required(ErrorMessage = "密码必填")]
-        [StringLength(100, MinimumLength = 6)]
+        [StringLength(128, MinimumLength = 10)]
         public string Password { get; set; } = string.Empty;
 
         [Required(ErrorMessage = "手机号必填")]

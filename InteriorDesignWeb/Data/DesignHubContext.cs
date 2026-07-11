@@ -19,6 +19,7 @@ public class DesignHubContext : DbContext
     public DbSet<UserQuota> userquotas { get; set; }
     public DbSet<UsageRecord> usagerecords { get; set; }
     public DbSet<ProjectActivity> projectactivities { get; set; }
+    public DbSet<UserSession> usersessions { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -34,6 +35,7 @@ public class DesignHubContext : DbContext
         modelBuilder.Entity<UserQuota>().ToTable("userquotas");
         modelBuilder.Entity<UsageRecord>().ToTable("usagerecords");
         modelBuilder.Entity<ProjectActivity>().ToTable("projectactivities");
+        modelBuilder.Entity<UserSession>().ToTable("usersessions");
 
         modelBuilder.Entity<User>()
             .Property(u => u.Role)
@@ -176,5 +178,21 @@ public class DesignHubContext : DbContext
             .WithMany()
             .HasForeignKey(a => a.UserID)
             .OnDelete(DeleteBehavior.SetNull);
+
+        modelBuilder.Entity<UserSession>()
+            .HasKey(session => session.UserSessionID);
+
+        modelBuilder.Entity<UserSession>()
+            .HasIndex(session => session.TokenHash)
+            .IsUnique();
+
+        modelBuilder.Entity<UserSession>()
+            .HasIndex(session => new { session.UserID, session.ExpiresAt, session.RevokedAt });
+
+        modelBuilder.Entity<UserSession>()
+            .HasOne(session => session.User)
+            .WithMany(user => user.Sessions)
+            .HasForeignKey(session => session.UserID)
+            .OnDelete(DeleteBehavior.Cascade);
     }
 }

@@ -7,6 +7,35 @@ const DEFAULT_HEADERS: Record<string, string> = {
   'Accept': 'application/json',
 }
 
+let refreshPromise: Promise<boolean> | null = null
+
+async function tryRefresh(): Promise<boolean> {
+  const response = await fetch(`${BASE_URL}/User/refresh`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: { Accept: 'application/json' },
+  })
+  return response.ok
+}
+
+export function refreshAuthSession(): Promise<boolean> {
+  if (refreshPromise) return refreshPromise
+
+  refreshPromise = (async () => {
+    try {
+      if (await tryRefresh()) return true
+      await new Promise((resolve) => window.setTimeout(resolve, 150))
+      return await tryRefresh()
+    } catch {
+      return false
+    } finally {
+      refreshPromise = null
+    }
+  })()
+
+  return refreshPromise
+}
+
 function normalizeRequestError(error: unknown): Error {
   if (error instanceof TypeError) {
     return new Error('无法连接到服务端，请稍后重试')
@@ -21,10 +50,9 @@ function normalizeRequestError(error: unknown): Error {
   return new Error('网络请求异常，请稍后重试')
 }
 
-function buildHeaders(options: RequestInit, token?: string | null): Record<string, string> {
+function buildHeaders(options: RequestInit): Record<string, string> {
   const headers: Record<string, string> = {
     ...DEFAULT_HEADERS,
-    ...(token ? { Authorization: `Bearer ${token}` } : {}),
     ...(options.headers as Record<string, string> | undefined),
   }
 
@@ -39,7 +67,11 @@ function buildHeaders(options: RequestInit, token?: string | null): Record<strin
 async function handleResponse(response: Response): Promise<unknown> {
   // 204 No Content 或无 content-type，直接返回 null
   const contentType = response.headers.get('content-type') ?? ''
-  if (response.status === 204 || !contentType) return null
+  if (response.status === 204) return null
+  if (!contentType) {
+    if (!response.ok) throw new Error(`HTTP ${response.status}`)
+    return null
+  }
 
   // 解析响应体
   let data: unknown = null
@@ -71,6 +103,7 @@ export async function request(
   try {
     const response = await fetch(`${BASE_URL}${endpoint}`, {
       ...options,
+      credentials: 'include',
       headers: buildHeaders(options),
     })
     return await handleResponse(response)
@@ -88,17 +121,26 @@ export async function requestWithAuth(
   endpoint: string,
   options: RequestInit = {},
 ): Promise<unknown> {
-  const token = localStorage.getItem('access_token')
-
   try {
-    const response = await fetch(`${BASE_URL}${endpoint}`, {
+    let response = await fetch(`${BASE_URL}${endpoint}`, {
       ...options,
-      headers: buildHeaders(options, token),
+      credentials: 'include',
+      headers: buildHeaders(options),
     })
 
     // 401：清除 token，派发事件，抛出错误
     if (response.status === 401) {
-      localStorage.removeItem('access_token')
+      const refreshed = await refreshAuthSession()
+      if (refreshed) {
+        response = await fetch(`${BASE_URL}${endpoint}`, {
+          ...options,
+          credentials: 'include',
+          headers: buildHeaders(options),
+        })
+      }
+    }
+
+    if (response.status === 401) {
       window.dispatchEvent(new Event('auth:unauthorized'))
       throw new Error('登录已过期，请重新登录')
     }
