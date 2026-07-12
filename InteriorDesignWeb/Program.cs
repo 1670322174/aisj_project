@@ -3,6 +3,7 @@
 
 using InteriorDesignWeb.Extensions;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.Extensions.FileProviders;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -26,6 +27,12 @@ builder.Services.AddApplicationControllers();
 builder.Services.AddSwaggerDocumentation();
 builder.Services.AddCorsPolicies(builder.Configuration, builder.Environment);
 builder.Services.AddApplicationRateLimiting();
+builder.Services.Configure<ForwardedHeadersOptions>(options =>
+{
+    options.ForwardedHeaders = ForwardedHeaders.XForwardedFor
+        | ForwardedHeaders.XForwardedProto;
+    options.ForwardLimit = 1;
+});
 
 // 基础设施注册
 builder.Services.AddDatabaseServices(builder.Configuration);
@@ -35,6 +42,9 @@ builder.Services.AddCloudStorage(builder.Configuration, builder.Environment);
 builder.Services.AddAIInfrastructure(builder.Configuration, builder.Environment);
 
 var app = builder.Build();
+
+// 在 HTTPS 跳转、日志和登录限流之前恢复同机可信反向代理传来的客户端 IP/协议。
+app.UseForwardedHeaders();
 
 // 全局异常处理必须尽量靠前，统一返回 ApiResponse 错误结构。
 app.UseMiddleware<InteriorDesignWeb.Middlewares.ExceptionHandlingMiddleware>();
@@ -80,6 +90,7 @@ app.UseRouting();
 // 开发环境使用前端本地端口，生产环境使用 appsettings 中 Cors:AllowedOrigins。
 app.UseCors(app.Environment.IsDevelopment() ? "FrontDev" : "FrontProd");
 app.UseRateLimiter();
+app.UseMiddleware<InteriorDesignWeb.Middlewares.AdminRequestProtectionMiddleware>();
 
 app.UseAuthentication();
 app.UseAuthorization();

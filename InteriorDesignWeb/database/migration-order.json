@@ -1,0 +1,9 @@
+[
+  "20260706_ai_workflow_integration.sql",
+  "20260710_project_image_media_phase1.sql",
+  "20260711_ai_job_soft_delete.sql",
+  "20260711_ai_job_hard_delete_asset_retention.sql",
+  "20260711_ai_result_idempotency.sql",
+  "20260711_user_refresh_sessions.sql",
+  "20260712_admin_management.sql"
+]

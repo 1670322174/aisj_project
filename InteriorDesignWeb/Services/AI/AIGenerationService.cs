@@ -17,8 +17,6 @@ namespace InteriorDesignWeb.Services.AI;
 
 public sealed class AIGenerationService : IAIGenerationService
 {
-    private const string SystemNegativePrompt =
-        "low quality,blurry,noise,grainy,overexposed,underexposed,bad lighting,bad composition,distorted,deformed,ugly,messy,unrealistic,cartoon,anime";
     private readonly IWorkflowRegistry _workflowRegistry;
     private readonly IWorkflowBuilder _workflowBuilder;
     private readonly IAIProvider _provider;
@@ -116,7 +114,7 @@ public sealed class AIGenerationService : IAIGenerationService
                 "negativePrompt",
                 StringComparison.OrdinalIgnoreCase));
         request.NegativePrompt = supportsNegativePrompt
-            ? ComposeNegativePrompt(request.NegativePrompt)
+            ? NegativePromptPolicy.Compose(request.NegativePrompt)
             : null;
 
         var workflowJson = _workflowBuilder.Build(workflow, request);
@@ -453,20 +451,6 @@ public sealed class AIGenerationService : IAIGenerationService
             _logger.LogError(ex, "ComfyUI Server 任务后台处理失败。JobId={JobId}", jobId);
             await MarkFailedAsync(jobId, ex.Message);
         }
-    }
-
-    private static string ComposeNegativePrompt(string? userPrompt)
-    {
-        var normalized = userPrompt?.Trim() ?? string.Empty;
-        if (normalized.StartsWith(SystemNegativePrompt, StringComparison.OrdinalIgnoreCase))
-        {
-            normalized = normalized[SystemNegativePrompt.Length..]
-                .TrimStart(' ', ',');
-        }
-
-        return string.IsNullOrWhiteSpace(normalized)
-            ? SystemNegativePrompt
-            : $"{SystemNegativePrompt},{normalized}";
     }
 
     private static AIGenerationSubmitRequest DeserializeRequest(

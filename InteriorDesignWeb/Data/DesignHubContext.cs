@@ -20,6 +20,7 @@ public class DesignHubContext : DbContext
     public DbSet<UsageRecord> usagerecords { get; set; }
     public DbSet<ProjectActivity> projectactivities { get; set; }
     public DbSet<UserSession> usersessions { get; set; }
+    public DbSet<AdminAuditLog> adminauditlogs { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -36,6 +37,7 @@ public class DesignHubContext : DbContext
         modelBuilder.Entity<UsageRecord>().ToTable("usagerecords");
         modelBuilder.Entity<ProjectActivity>().ToTable("projectactivities");
         modelBuilder.Entity<UserSession>().ToTable("usersessions");
+        modelBuilder.Entity<AdminAuditLog>().ToTable("adminauditlogs");
 
         modelBuilder.Entity<User>()
             .Property(u => u.Role)
@@ -194,5 +196,20 @@ public class DesignHubContext : DbContext
             .WithMany(user => user.Sessions)
             .HasForeignKey(session => session.UserID)
             .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<User>()
+            .HasIndex(user => new { user.IsEnabled, user.Role, user.RegisterTime });
+
+        modelBuilder.Entity<AdminAuditLog>()
+            .HasIndex(log => log.CreatedAt);
+
+        modelBuilder.Entity<AdminAuditLog>()
+            .HasIndex(log => new { log.AdministratorUserID, log.CreatedAt });
+
+        modelBuilder.Entity<AdminAuditLog>()
+            .HasOne(log => log.Administrator)
+            .WithMany()
+            .HasForeignKey(log => log.AdministratorUserID)
+            .OnDelete(DeleteBehavior.SetNull);
     }
 }

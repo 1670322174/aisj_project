@@ -59,4 +59,13 @@
       </ResolvedFileToPublish>
     </ItemGroup>
   </Target>
+
+  <Target Name="ValidateFrontendPublish" AfterTargets="Publish">
+    <Error Condition="!Exists('$(PublishDir)wwwroot\dist\index.html')"
+           Text="Published frontend index is missing from wwwroot/dist." />
+    <Error Condition="Exists('$(PublishDir)wwwroot\src')"
+           Text="Frontend source files must not be included in the production package." />
+    <Error Condition="Exists('$(PublishDir)appsettings.Development.json')"
+           Text="Development configuration must not be included in the production package." />
+  </Target>
 </Project>

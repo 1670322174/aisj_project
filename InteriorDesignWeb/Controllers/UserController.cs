@@ -13,7 +13,6 @@ using Microsoft.IdentityModel.Tokens;
 using System.ComponentModel.DataAnnotations;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
-using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Threading.Tasks;
@@ -57,6 +56,7 @@ namespace InteriorDesignWeb.Controllers
         /// <returns>返回注册结果</returns>
         [Authorize(Roles = nameof(UserRole.Administrator))]
         [HttpPost("register")]
+        [NonAction]
         public async Task<IActionResult> Register([FromBody] RegisterRequest request)
         {
             try
@@ -78,7 +78,9 @@ namespace InteriorDesignWeb.Controllers
                 {
                     UserName = request.Username,
                     PhoneNumber = request.PhoneNumber,
-                    RegisterTime = DateTime.UtcNow
+                    RegisterTime = DateTime.UtcNow,
+                    IsEnabled = true,
+                    AuthVersion = 1
                 };
 
                 // 密码加密
@@ -150,6 +152,9 @@ namespace InteriorDesignWeb.Controllers
                 if (result == PasswordVerificationResult.Failed)
                     return Unauthorized(new { Code = 40101, Message = "用户名或密码错误" });
 
+                if (!user.IsEnabled)
+                    return StatusCode(StatusCodes.Status403Forbidden, new { Code = 40301, Message = "账号已被禁用，请联系管理员" });
+
                 if (result == PasswordVerificationResult.SuccessRehashNeeded)
                 {
                     user.PasswordHash = hasher.HashPassword(user, request.Password);
@@ -157,12 +162,16 @@ namespace InteriorDesignWeb.Controllers
                 }
 
                 var now = DateTime.UtcNow;
-                var refreshToken = CreateRefreshToken();
+                user.LastLoginAt = now;
+                user.LastActivityAt = now;
+                user.LastLoginIp = Truncate(HttpContext.Connection.RemoteIpAddress?.ToString(), 64);
+                user.UpdatedAt = now;
+                var refreshToken = RefreshTokenService.CreateToken();
                 var refreshExpires = now.Add(RefreshLifetime);
                 _context.usersessions.Add(new UserSession
                 {
                     UserID = user.UserID,
-                    TokenHash = HashRefreshToken(refreshToken),
+                    TokenHash = RefreshTokenService.HashToken(refreshToken),
                     CreatedAt = now,
                     ExpiresAt = refreshExpires,
                     UserAgent = Truncate(Request.Headers.UserAgent.ToString(), 300),
@@ -214,7 +223,7 @@ namespace InteriorDesignWeb.Controllers
             }
 
             var now = DateTime.UtcNow;
-            var tokenHash = HashRefreshToken(refreshToken);
+            var tokenHash = RefreshTokenService.HashToken(refreshToken);
             var session = await _context.usersessions
                 .Include(item => item.User)
                 .FirstOrDefaultAsync(item => item.TokenHash == tokenHash);
@@ -224,13 +233,22 @@ namespace InteriorDesignWeb.Controllers
                 return Unauthorized(new { Code = 40102, Message = "登录状态已过期" });
             }
 
-            var replacementToken = CreateRefreshToken();
-            var replacementHash = HashRefreshToken(replacementToken);
+            if (!session.User.IsEnabled)
+            {
+                session.RevokedAt = now;
+                await _context.SaveChangesAsync();
+                DeleteAuthCookies();
+                return StatusCode(StatusCodes.Status403Forbidden, new { Code = 40301, Message = "账号已被禁用，请联系管理员" });
+            }
+
+            var replacementToken = RefreshTokenService.CreateToken();
+            var replacementHash = RefreshTokenService.HashToken(replacementToken);
             var refreshExpires = now.Add(RefreshLifetime);
 
             session.LastUsedAt = now;
             session.RevokedAt = now;
             session.ReplacedByTokenHash = replacementHash;
+            session.User.LastActivityAt = now;
             _context.usersessions.Add(new UserSession
             {
                 UserID = session.UserID,
@@ -276,7 +294,8 @@ namespace InteriorDesignWeb.Controllers
                     user.UserID,
                     user.UserName,
                     user.PhoneNumber,
-                    Role = user.Role.ToString()
+                    Role = user.Role.ToString(),
+                    user.IsEnabled
                 }
             });
         }
@@ -288,7 +307,7 @@ namespace InteriorDesignWeb.Controllers
             if (Request.Cookies.TryGetValue(RefreshCookieName, out var refreshToken)
                 && !string.IsNullOrWhiteSpace(refreshToken))
             {
-                var tokenHash = HashRefreshToken(refreshToken);
+                var tokenHash = RefreshTokenService.HashToken(refreshToken);
                 var session = await _context.usersessions
                     .FirstOrDefaultAsync(item => item.TokenHash == tokenHash && item.RevokedAt == null);
                 if (session != null)
@@ -309,6 +328,7 @@ namespace InteriorDesignWeb.Controllers
                 new Claim(ClaimTypes.NameIdentifier, user.UserID.ToString()),
                 new Claim(ClaimTypes.Name, user.UserName),
                 new Claim(ClaimTypes.Role, user.Role.ToString()),
+                new Claim("auth_version", user.AuthVersion.ToString()),
                 new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString())
             };
             var secret = _jwtSettings.Secret
@@ -365,13 +385,6 @@ namespace InteriorDesignWeb.Controllers
             options.Path = "/api/User";
             Response.Cookies.Delete(RefreshCookieName, options);
         }
-
-        private static string CreateRefreshToken() =>
-            Convert.ToBase64String(RandomNumberGenerator.GetBytes(64));
-
-        private static string HashRefreshToken(string token) =>
-            Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(token)))
-                .ToLowerInvariant();
 
         private static string? Truncate(string? value, int maxLength) =>
             string.IsNullOrWhiteSpace(value)

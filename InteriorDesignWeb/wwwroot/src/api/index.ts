@@ -16,3 +16,4 @@ export {
 export { projectsApi } from './modules/projects'
 export { imagesApi }   from './modules/images'
 export { roomsApi }    from './modules/rooms'
+export { adminApi }    from './modules/admin'

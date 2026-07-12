@@ -5,6 +5,8 @@ using InteriorDesignWeb.Models.Entities;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
+using InteriorDesignWeb.Data;
+using Microsoft.EntityFrameworkCore;
 
 namespace InteriorDesignWeb.Extensions;
 
@@ -71,7 +73,7 @@ public static class AuthenticationServiceExtensions
 
                         return Task.CompletedTask;
                     },
-                    OnTokenValidated = context =>
+                    OnTokenValidated = async context =>
                     {
                         var logger = context.HttpContext.RequestServices
                             .GetRequiredService<ILoggerFactory>()
@@ -80,13 +82,35 @@ public static class AuthenticationServiceExtensions
                         var userId = context.Principal?.FindFirstValue(ClaimTypes.NameIdentifier);
                         var role = context.Principal?.FindFirstValue(ClaimTypes.Role);
 
+                        if (!int.TryParse(userId, out var parsedUserId)
+                            || !int.TryParse(context.Principal?.FindFirstValue("auth_version"), out var tokenAuthVersion))
+                        {
+                            context.Fail("登录凭据缺少安全版本");
+                            return;
+                        }
+
+                        var db = context.HttpContext.RequestServices.GetRequiredService<DesignHubContext>();
+                        var account = await db.users.AsNoTracking()
+                            .Where(user => user.UserID == parsedUserId)
+                            .Select(user => new { user.IsEnabled, user.AuthVersion, user.Role })
+                            .FirstOrDefaultAsync(context.HttpContext.RequestAborted);
+
+                        if (account == null
+                            || !account.IsEnabled
+                            || account.AuthVersion != tokenAuthVersion
+                            || !string.Equals(account.Role.ToString(), role, StringComparison.Ordinal))
+                        {
+                            logger.LogInformation("JWT 已因账号状态或权限变化失效. UserId={UserId}", parsedUserId);
+                            context.Fail("登录状态已失效");
+                            return;
+                        }
+
                         logger.LogDebug(
                             "JWT认证成功。UserId={UserId}, Role={Role}",
                             userId,
                             role
                         );
 
-                        return Task.CompletedTask;
                     },
                     OnAuthenticationFailed = context =>
                     {

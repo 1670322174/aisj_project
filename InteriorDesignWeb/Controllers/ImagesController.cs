@@ -52,6 +52,9 @@ namespace InteriorDesignWeb.Controllers
         }
 
         [HttpPost("upload")]
+        [Authorize(Roles = nameof(UserRole.Administrator))]
+        [RequestSizeLimit(20L * 1024 * 1024)]
+        [NonAction]
         [SwaggerOperation(
            Summary = "上传设计图片",
            Description = "支持上传图片并附加元数据",

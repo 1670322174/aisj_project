@@ -50,11 +50,16 @@ function normalizeRequestError(error: unknown): Error {
   return new Error('网络请求异常，请稍后重试')
 }
 
-function buildHeaders(options: RequestInit): Record<string, string> {
+function buildHeaders(endpoint: string, options: RequestInit): Record<string, string> {
   const headers: Record<string, string> = {
     ...DEFAULT_HEADERS,
     ...(options.headers as Record<string, string> | undefined),
   }
+
+  const method = (options.method ?? 'GET').toUpperCase()
+  const isAdminWrite = endpoint.toLowerCase().startsWith('/admin')
+    && !['GET', 'HEAD', 'OPTIONS'].includes(method)
+  if (isAdminWrite) headers['X-DesignHub-Admin'] = '1'
 
   // 浏览器必须自行生成 multipart/form-data 的 boundary。
   if (options.body instanceof FormData) delete headers['Content-Type']
@@ -104,7 +109,7 @@ export async function request(
     const response = await fetch(`${BASE_URL}${endpoint}`, {
       ...options,
       credentials: 'include',
-      headers: buildHeaders(options),
+      headers: buildHeaders(endpoint, options),
     })
     return await handleResponse(response)
   } catch (error) {
@@ -125,7 +130,7 @@ export async function requestWithAuth(
     let response = await fetch(`${BASE_URL}${endpoint}`, {
       ...options,
       credentials: 'include',
-      headers: buildHeaders(options),
+      headers: buildHeaders(endpoint, options),
     })
 
     // 401：清除 token，派发事件，抛出错误
@@ -135,7 +140,7 @@ export async function requestWithAuth(
         response = await fetch(`${BASE_URL}${endpoint}`, {
           ...options,
           credentials: 'include',
-          headers: buildHeaders(options),
+          headers: buildHeaders(endpoint, options),
         })
       }
     }

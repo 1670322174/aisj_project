@@ -24,6 +24,7 @@ import {
   MoreHorizontal,
   Trash2,
   ExternalLink,
+  ShieldCheck,
 } from 'lucide-react'
 import { aiApi, type AIJob } from '@/api/modules/ai'
 import { MODE_LABELS, WORKFLOW_MODE } from '@/features/ai/config'
@@ -516,6 +517,7 @@ export function Sidebar() {
     user,
     logout,
     openLoginModal,
+    authUser,
   } = useAppStore()
   const navigate = useNavigate()
 
@@ -611,6 +613,25 @@ export function Sidebar() {
             </NavLink>
           )
         })}
+
+        {authUser?.role?.toLowerCase() === 'administrator' && (
+          <NavLink
+            to="/app/admin"
+            title={collapsed ? '网站管理' : undefined}
+            className={({ isActive }) =>
+              cn(
+                'relative flex items-center rounded-xl transition-all duration-200 group',
+                collapsed ? 'h-10 w-10 justify-center mx-auto' : 'gap-3 px-3 h-9',
+                isActive
+                  ? 'bg-[var(--bg-card)] text-[var(--text-primary)] border border-[var(--accent-border)] shadow-[0_0_8px_var(--accent-glow)] after:absolute after:left-0 after:top-1/2 after:-translate-y-1/2 after:w-0.5 after:h-4 after:rounded-full after:bg-[var(--accent)]'
+                  : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-card)]',
+              )
+            }
+          >
+            <ShieldCheck size={16} className="shrink-0" />
+            {!collapsed && <span className="text-sm font-medium truncate">网站管理</span>}
+          </NavLink>
+        )}
       </nav>
 
       {/* ════════ 当前方案选择器 ════════ */}
