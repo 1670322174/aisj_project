@@ -3,6 +3,7 @@
 
 using InteriorDesignWeb.Extensions;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
+using Microsoft.Extensions.FileProviders;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -38,11 +39,42 @@ var app = builder.Build();
 // 全局异常处理必须尽量靠前，统一返回 ApiResponse 错误结构。
 app.UseMiddleware<InteriorDesignWeb.Middlewares.ExceptionHandlingMiddleware>();
 app.UseMiddleware<InteriorDesignWeb.Middlewares.RequestTelemetryMiddleware>();
-
-// 只暴露 wwwroot 静态资源，避免开发环境暴露项目根目录文件。
-app.UseStaticFiles();
-
 app.UseHttpsRedirection();
+
+// Vite 的唯一生产输出目录是 wwwroot/dist。不要直接暴露整个 wwwroot，
+// 否则 src、配置文件和前端工程文件也会成为可访问的静态资源。
+var webRootPath = app.Environment.WebRootPath
+    ?? Path.Combine(app.Environment.ContentRootPath, "wwwroot");
+var frontendDistPath = Path.Combine(webRootPath, "dist");
+var frontendIndexPath = Path.Combine(frontendDistPath, "index.html");
+var hasFrontendBuild = File.Exists(frontendIndexPath);
+if (hasFrontendBuild)
+{
+    var frontendFiles = new PhysicalFileProvider(frontendDistPath);
+    app.UseDefaultFiles(new DefaultFilesOptions
+    {
+        FileProvider = frontendFiles
+    });
+    app.UseStaticFiles(new StaticFileOptions
+    {
+        FileProvider = frontendFiles,
+        OnPrepareResponse = context =>
+        {
+            // 单文件构建的 index.html 每次发布都会变化，不能长期缓存。
+            if (context.File.Name.Equals("index.html", StringComparison.OrdinalIgnoreCase))
+            {
+                context.Context.Response.Headers.CacheControl = "no-cache, no-store, must-revalidate";
+            }
+        }
+    });
+}
+else
+{
+    app.Logger.LogWarning(
+        "Frontend build not found at {FrontendIndexPath}. Run npm run build before starting a production deployment.",
+        frontendIndexPath);
+}
+
 app.UseRouting();
 
 // 开发环境使用前端本地端口，生产环境使用 appsettings 中 Cors:AllowedOrigins。
@@ -71,5 +103,28 @@ if (app.Environment.IsDevelopment())
         c.SwaggerEndpoint("/swagger/v1/swagger.json", "DesignHub API v1");
     });
 }
+
+// React Router 使用浏览器历史路由。只有非 API 的未知 GET/HEAD 路径
+// 才回退到前端入口，避免不存在的 API 错误地返回 HTML 200。
+app.MapFallback(async context =>
+{
+    var path = context.Request.Path;
+    var isBackendPath = path.StartsWithSegments("/api")
+        || path.StartsWithSegments("/health")
+        || path.StartsWithSegments("/swagger");
+    var isPageRequest = HttpMethods.IsGet(context.Request.Method)
+        || HttpMethods.IsHead(context.Request.Method);
+    var looksLikeStaticFile = Path.HasExtension(path.Value);
+
+    if (!hasFrontendBuild || isBackendPath || !isPageRequest || looksLikeStaticFile)
+    {
+        context.Response.StatusCode = StatusCodes.Status404NotFound;
+        return;
+    }
+
+    context.Response.ContentType = "text/html; charset=utf-8";
+    context.Response.Headers.CacheControl = "no-cache, no-store, must-revalidate";
+    await context.Response.SendFileAsync(frontendIndexPath);
+});
 
 app.Run();

@@ -30,6 +30,9 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- 生产包只发布 Vite 的 dist；src、node 配置和环境模板不得进入服务器包。 -->
+    <Content Remove="wwwroot\**\*" />
+    <Content Update="appsettings.Development.json" CopyToPublishDirectory="Never" />
     <Content Update="workflow\**\*.json">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
@@ -39,4 +42,21 @@
       <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
     </Content>
   </ItemGroup>
+
+  <Target Name="BuildFrontendForPublish"
+          BeforeTargets="ComputeFilesToPublish"
+          Condition="'$(SkipFrontendBuild)' != 'true'">
+    <Exec WorkingDirectory="$(MSBuildProjectDirectory)\wwwroot"
+          Command="npm ci"
+          Condition="!Exists('$(MSBuildProjectDirectory)\wwwroot\node_modules')" />
+    <Exec WorkingDirectory="$(MSBuildProjectDirectory)\wwwroot"
+          Command="npm run build" />
+    <ItemGroup>
+      <_FrontendPublishFile Include="$(MSBuildProjectDirectory)\wwwroot\dist\**\*" />
+      <ResolvedFileToPublish Include="@(_FrontendPublishFile)">
+        <RelativePath>wwwroot\dist\%(_FrontendPublishFile.RecursiveDir)%(_FrontendPublishFile.Filename)%(_FrontendPublishFile.Extension)</RelativePath>
+        <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+      </ResolvedFileToPublish>
+    </ItemGroup>
+  </Target>
 </Project>
