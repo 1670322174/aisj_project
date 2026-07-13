@@ -21,6 +21,9 @@ public class DesignHubContext : DbContext
     public DbSet<ProjectActivity> projectactivities { get; set; }
     public DbSet<UserSession> usersessions { get; set; }
     public DbSet<AdminAuditLog> adminauditlogs { get; set; }
+    public DbSet<AssistantConversation> assistantconversations { get; set; }
+    public DbSet<AssistantMessage> assistantmessages { get; set; }
+    public DbSet<AssistantGenerationAction> assistantgenerationactions { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -38,6 +41,73 @@ public class DesignHubContext : DbContext
         modelBuilder.Entity<ProjectActivity>().ToTable("projectactivities");
         modelBuilder.Entity<UserSession>().ToTable("usersessions");
         modelBuilder.Entity<AdminAuditLog>().ToTable("adminauditlogs");
+        modelBuilder.Entity<AssistantConversation>().ToTable("assistantconversations");
+        modelBuilder.Entity<AssistantMessage>().ToTable("assistantmessages");
+        modelBuilder.Entity<AssistantGenerationAction>().ToTable("assistantgenerationactions");
+
+        modelBuilder.Entity<AssistantConversation>()
+            .HasOne(conversation => conversation.User)
+            .WithMany()
+            .HasForeignKey(conversation => conversation.UserID)
+            .OnDelete(DeleteBehavior.Cascade);
+        modelBuilder.Entity<AssistantConversation>()
+            .HasOne(conversation => conversation.Project)
+            .WithMany()
+            .HasForeignKey(conversation => conversation.ProjectID)
+            .OnDelete(DeleteBehavior.SetNull);
+        modelBuilder.Entity<AssistantConversation>()
+            .HasOne(conversation => conversation.Room)
+            .WithMany()
+            .HasForeignKey(conversation => conversation.RoomID)
+            .OnDelete(DeleteBehavior.SetNull);
+        modelBuilder.Entity<AssistantConversation>()
+            .HasIndex(conversation => new { conversation.UserID, conversation.IsDeleted, conversation.UpdatedAt });
+
+        modelBuilder.Entity<AssistantMessage>()
+            .HasOne(message => message.Conversation)
+            .WithMany(conversation => conversation.Messages)
+            .HasForeignKey(message => message.ConversationID)
+            .OnDelete(DeleteBehavior.Cascade);
+        modelBuilder.Entity<AssistantMessage>()
+            .HasIndex(message => new { message.ConversationID, message.CreatedAt });
+        modelBuilder.Entity<AssistantMessage>()
+            .HasIndex(message => new { message.ConversationID, message.ClientRequestID })
+            .IsUnique();
+
+        modelBuilder.Entity<AssistantGenerationAction>()
+            .HasOne(action => action.Conversation)
+            .WithMany(conversation => conversation.GenerationActions)
+            .HasForeignKey(action => action.ConversationID)
+            .OnDelete(DeleteBehavior.Cascade);
+        modelBuilder.Entity<AssistantGenerationAction>()
+            .HasOne(action => action.Message)
+            .WithMany()
+            .HasForeignKey(action => action.MessageID)
+            .OnDelete(DeleteBehavior.SetNull);
+        modelBuilder.Entity<AssistantGenerationAction>()
+            .HasOne(action => action.Project)
+            .WithMany()
+            .HasForeignKey(action => action.ProjectID)
+            .OnDelete(DeleteBehavior.SetNull);
+        modelBuilder.Entity<AssistantGenerationAction>()
+            .HasOne(action => action.Room)
+            .WithMany()
+            .HasForeignKey(action => action.RoomID)
+            .OnDelete(DeleteBehavior.SetNull);
+        modelBuilder.Entity<AssistantGenerationAction>()
+            .HasIndex(action => new { action.ConversationID, action.IdempotencyKey })
+            .IsUnique();
+        modelBuilder.Entity<AssistantGenerationAction>()
+            .HasIndex(action => action.JobID);
+
+        modelBuilder.Entity<Image>()
+            .HasOne(image => image.DeletedByUser)
+            .WithMany()
+            .HasForeignKey(image => image.DeletedByUserID)
+            .OnDelete(DeleteBehavior.SetNull);
+
+        modelBuilder.Entity<Image>()
+            .HasIndex(image => new { image.IsDeleted, image.UploadTime });
 
         modelBuilder.Entity<User>()
             .Property(u => u.Role)
@@ -180,6 +250,10 @@ public class DesignHubContext : DbContext
             .WithMany()
             .HasForeignKey(a => a.UserID)
             .OnDelete(DeleteBehavior.SetNull);
+
+        modelBuilder.Entity<UsageRecord>()
+            .HasIndex(r => new { r.JobId, r.UsageType })
+            .IsUnique();
 
         modelBuilder.Entity<UserSession>()
             .HasKey(session => session.UserSessionID);

@@ -52,6 +52,8 @@ public sealed class AdminController : ControllerBase
     private readonly IConfiguration _configuration;
     private readonly IWebHostEnvironment _environment;
     private readonly IActionDescriptorCollectionProvider _actionDescriptors;
+    private readonly IUsageQuotaService _usageQuotaService;
+    private readonly IRoleLimitService _roleLimitService;
     private readonly ILogger<AdminController> _logger;
 
     public AdminController(
@@ -60,6 +62,8 @@ public sealed class AdminController : ControllerBase
         IConfiguration configuration,
         IWebHostEnvironment environment,
         IActionDescriptorCollectionProvider actionDescriptors,
+        IUsageQuotaService usageQuotaService,
+        IRoleLimitService roleLimitService,
         ILogger<AdminController> logger)
     {
         _context = context;
@@ -67,6 +71,8 @@ public sealed class AdminController : ControllerBase
         _configuration = configuration;
         _environment = environment;
         _actionDescriptors = actionDescriptors;
+        _usageQuotaService = usageQuotaService;
+        _roleLimitService = roleLimitService;
         _logger = logger;
     }
 
@@ -88,10 +94,11 @@ public sealed class AdminController : ControllerBase
         var newProjectsToday = await _context.projects.AsNoTracking()
             .CountAsync(project => !project.IsDeleted && project.CreatedAt >= today, cancellationToken);
 
-        var galleryCount = await _context.images.AsNoTracking().CountAsync(cancellationToken);
+        var galleryCount = await _context.images.AsNoTracking().CountAsync(image => !image.IsDeleted, cancellationToken);
         var newGalleryToday = await _context.images.AsNoTracking()
-            .CountAsync(image => image.UploadTime >= today, cancellationToken);
+            .CountAsync(image => !image.IsDeleted && image.UploadTime >= today, cancellationToken);
         var galleryBytes = await _context.images.AsNoTracking()
+            .Where(image => !image.IsDeleted)
             .Select(image => (long?)image.FileSize)
             .SumAsync(cancellationToken) ?? 0;
 
@@ -304,12 +311,19 @@ public sealed class AdminController : ControllerBase
         };
         user.PasswordHash = new PasswordHasher<User>().HashPassword(user, request.Password);
 
-        await using var transaction = await _context.Database.BeginTransactionAsync(cancellationToken);
         _context.users.Add(user);
+        _context.userquotas.Add(new UserQuota
+        {
+            User = user,
+            TotalUnits = _roleLimitService.GetAIGenerationUnits(role),
+            RemainingUnits = _roleLimitService.GetAIGenerationUnits(role),
+            AssistantTokenLimit5Hours = _roleLimitService.GetAssistantTokens5Hours(role),
+            AssistantTokenWindowStartedAt = now,
+            CreatedAt = now,
+            UpdatedAt = now
+        });
+        AddAudit("user.create", "user", username, $"创建用户 {user.UserName}", new { Role = role.ToString() });
         await _context.SaveChangesAsync(cancellationToken);
-        AddAudit("user.create", "user", user.UserID.ToString(), $"创建用户 {user.UserName}", new { Role = role.ToString() });
-        await _context.SaveChangesAsync(cancellationToken);
-        await transaction.CommitAsync(cancellationToken);
 
         return OkEnvelope(new
         {
@@ -338,10 +352,7 @@ public sealed class AdminController : ControllerBase
         var activeSessionCount = await _context.usersessions.AsNoTracking()
             .CountAsync(session => session.UserID == userId && session.RevokedAt == null && session.ExpiresAt > now, cancellationToken);
 
-        var quota = await _context.userquotas.AsNoTracking()
-            .Where(item => item.UserID == userId)
-            .Select(item => new { Total = item.TotalUnits, Used = item.UsedUnits, Available = item.RemainingUnits })
-            .FirstOrDefaultAsync(cancellationToken);
+        var quota = await _usageQuotaService.GetAsync(userId, cancellationToken);
 
         var recentProjects = await _context.projects.AsNoTracking()
             .Where(project => project.UserID == userId && !project.IsDeleted)
@@ -424,7 +435,17 @@ public sealed class AdminController : ControllerBase
                 SessionCount = activeSessionCount,
                 user.DisabledAt
             },
-            Quota = quota ?? new { Total = 0, Used = 0, Available = 0 },
+            Quota = new
+            {
+                Total = quota.TotalUnits,
+                Used = quota.UsedUnits,
+                Available = quota.RemainingUnits,
+                quota.AssistantTokenLimit5Hours,
+                quota.AssistantTokensUsed5Hours,
+                AssistantTokensRemaining5Hours = Math.Max(0, quota.AssistantTokenLimit5Hours - quota.AssistantTokensUsed5Hours),
+                quota.AssistantTokenWindowStartedAt,
+                quota.AssistantTokenWindowEndsAt
+            },
             Counts = new { Projects = projectCount, Jobs = jobCount, Images = imageCount, Sessions = activeSessionCount },
             RecentProjects = recentProjects,
             RecentJobs = recentJobs.Select(job => new
@@ -442,6 +463,50 @@ public sealed class AdminController : ControllerBase
             RecentActivities = recentActivities,
             Sessions = sessions
         });
+    }
+
+    [HttpPut("users/{userId:int}/quota")]
+    public async Task<IActionResult> UpdateUserQuota(
+        int userId,
+        [FromBody] AdminUpdateUserQuotaRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (!await _context.users.AsNoTracking().AnyAsync(item => item.UserID == userId, cancellationToken))
+            return NotFoundEnvelope("用户不存在");
+        if (request.RemainingUnits > request.TotalUnits)
+            return BadRequestEnvelope("生图剩余额度不能大于总额度");
+        if (request.AssistantTokensUsed5Hours > request.AssistantTokenLimit5Hours)
+            return BadRequestEnvelope("助手已使用 Token 不能大于 5 小时上限");
+
+        var quota = await _usageQuotaService.UpdateAsync(
+            userId,
+            request.TotalUnits,
+            request.RemainingUnits,
+            request.AssistantTokenLimit5Hours,
+            request.AssistantTokensUsed5Hours,
+            request.ResetAssistantWindow,
+            cancellationToken);
+        AddAudit("user.quota.change", "user", userId.ToString(), "修改用户 AI 使用额度", new
+        {
+            quota.TotalUnits,
+            quota.RemainingUnits,
+            quota.AssistantTokenLimit5Hours,
+            quota.AssistantTokensUsed5Hours,
+            request.ResetAssistantWindow
+        });
+        await _context.SaveChangesAsync(cancellationToken);
+
+        return OkEnvelope(new
+        {
+            Total = quota.TotalUnits,
+            Used = quota.UsedUnits,
+            Available = quota.RemainingUnits,
+            quota.AssistantTokenLimit5Hours,
+            quota.AssistantTokensUsed5Hours,
+            AssistantTokensRemaining5Hours = Math.Max(0, quota.AssistantTokenLimit5Hours - quota.AssistantTokensUsed5Hours),
+            quota.AssistantTokenWindowStartedAt,
+            quota.AssistantTokenWindowEndsAt
+        }, "用户额度已更新");
     }
 
     [HttpPut("users/{userId:int}/role")]
@@ -820,17 +885,45 @@ public sealed class AdminController : ControllerBase
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 20,
         [FromQuery] string? search = null,
+        [FromQuery] string status = "active",
+        [FromQuery] string? room = null,
+        [FromQuery] bool? referenced = null,
         CancellationToken cancellationToken = default)
     {
         page = Math.Max(1, page);
         pageSize = Math.Clamp(pageSize, 1, 100);
         var query = _context.images.AsNoTracking().AsQueryable();
+
+        query = status.Trim().ToLowerInvariant() switch
+        {
+            "all" => query,
+            "deleted" => query.Where(image => image.IsDeleted),
+            _ => query.Where(image => !image.IsDeleted)
+        };
+
         if (!string.IsNullOrWhiteSpace(search))
         {
             var keyword = search.Trim();
             query = query.Where(image => image.FileName.Contains(keyword)
                 || (image.Room != null && image.Room.Contains(keyword))
                 || (image.Tags != null && image.Tags.Contains(keyword)));
+        }
+
+        if (!string.IsNullOrWhiteSpace(room))
+        {
+            var roomKeyword = room.Trim();
+            query = query.Where(image => image.Room != null && image.Room.Contains(roomKeyword));
+        }
+
+        if (referenced.HasValue)
+        {
+            query = referenced.Value
+                ? query.Where(image =>
+                    _context.projectimages.Any(relation => relation.ImageID == image.ImageID)
+                    || _context.projects.Any(project => project.CoverImageID == image.ImageID))
+                : query.Where(image =>
+                    !_context.projectimages.Any(relation => relation.ImageID == image.ImageID)
+                    && !_context.projects.Any(project => project.CoverImageID == image.ImageID));
         }
 
         var totalCount = await query.CountAsync(cancellationToken);
@@ -844,6 +937,11 @@ public sealed class AdminController : ControllerBase
                 RoomType = image.Room,
                 image.FileSize,
                 image.Tags,
+                image.IsDeleted,
+                image.DeletedAt,
+                image.UpdatedAt,
+                ReferenceCount = _context.projectimages.Count(relation => relation.ImageID == image.ImageID)
+                    + _context.projects.Count(project => project.CoverImageID == image.ImageID),
                 ThumbnailUrl = $"/api/Images/{image.ImageID}/file?type=thumbnail",
                 OriginalUrl = $"/api/Images/{image.ImageID}/file",
                 CreatedAt = image.UploadTime
@@ -858,6 +956,123 @@ public sealed class AdminController : ControllerBase
             TotalCount = totalCount,
             TotalPages = (int)Math.Ceiling(totalCount / (double)pageSize)
         });
+    }
+
+    [HttpPut("gallery/images/{imageId:int}")]
+    public async Task<IActionResult> UpdateGalleryImage(
+        int imageId,
+        [FromBody] AdminUpdateGalleryImageRequest request,
+        CancellationToken cancellationToken)
+    {
+        var image = await _context.images.FirstOrDefaultAsync(item => item.ImageID == imageId, cancellationToken);
+        if (image == null) return NotFoundEnvelope("图片不存在");
+
+        var safeFileName = Path.GetFileName(request.FileName.Trim());
+        var roomType = request.RoomType.Trim();
+        if (string.IsNullOrWhiteSpace(safeFileName)) return BadRequestEnvelope("图片名称不能为空");
+        if (string.IsNullOrWhiteSpace(roomType)) return BadRequestEnvelope("房间类型不能为空");
+
+        var oldValue = new { image.FileName, image.Room, image.Tags };
+        image.FileName = safeFileName;
+        image.Room = roomType;
+        image.Tags = Truncate(request.Tags?.Trim(), 1500);
+        image.UpdatedAt = DateTime.UtcNow;
+
+        AddAudit("gallery.image.update", "gallery_image", imageId.ToString(), "修改普通图库图片信息", new
+        {
+            Before = oldValue,
+            After = new { image.FileName, image.Room, image.Tags }
+        });
+        await _context.SaveChangesAsync(cancellationToken);
+        return OkEnvelope(new { ImageId = imageId, image.FileName, RoomType = image.Room, image.Tags, image.UpdatedAt }, "图片信息已更新");
+    }
+
+    [HttpDelete("gallery/images/{imageId:int}")]
+    public async Task<IActionResult> DeleteGalleryImage(int imageId, CancellationToken cancellationToken)
+    {
+        var image = await _context.images.FirstOrDefaultAsync(item => item.ImageID == imageId, cancellationToken);
+        if (image == null) return NotFoundEnvelope("图片不存在");
+
+        var relationCount = await _context.projectimages.CountAsync(
+            relation => relation.ImageID == imageId,
+            cancellationToken);
+        var coverCount = await _context.projects.CountAsync(
+            project => project.CoverImageID == imageId,
+            cancellationToken);
+        var referenceCount = relationCount + coverCount;
+
+        image.IsDeleted = true;
+        image.DeletedAt ??= DateTime.UtcNow;
+        image.DeletedByUserID = GetAdministratorIdOrNull();
+        image.UpdatedAt = DateTime.UtcNow;
+        await _context.SaveChangesAsync(cancellationToken);
+
+        if (referenceCount > 0)
+        {
+            AddAudit("gallery.image.hide", "gallery_image", imageId.ToString(), "图片已从公共图库下架，方案引用继续保留", new
+            {
+                ReferenceCount = referenceCount,
+                ProjectRelations = relationCount,
+                ProjectCovers = coverCount
+            });
+            await _context.SaveChangesAsync(cancellationToken);
+            return OkEnvelope(new
+            {
+                ImageId = imageId,
+                Mode = "soft_delete",
+                ReferenceCount = referenceCount
+            }, $"图片已下架；仍被 {referenceCount} 个方案位置引用，因此保留文件");
+        }
+
+        try
+        {
+            var originalShared = await _context.images.AsNoTracking().AnyAsync(
+                item => item.ImageID != imageId && item.FilePath == image.FilePath,
+                cancellationToken);
+            var thumbnailShared = await _context.images.AsNoTracking().AnyAsync(
+                item => item.ImageID != imageId && item.ThumbnailPath == image.ThumbnailPath,
+                cancellationToken);
+
+            if (!originalShared) _cosService.DeleteDefaultObject(image.FilePath);
+            if (!thumbnailShared) _cosService.DeleteDefaultObject(image.ThumbnailPath);
+
+            _context.images.Remove(image);
+            AddAudit("gallery.image.delete", "gallery_image", imageId.ToString(), "彻底删除未被方案引用的普通图库图片", new
+            {
+                OriginalObjectDeleted = !originalShared,
+                ThumbnailObjectDeleted = !thumbnailShared
+            });
+            await _context.SaveChangesAsync(cancellationToken);
+            return OkEnvelope(new { ImageId = imageId, Mode = "hard_delete", ReferenceCount = 0 }, "图片及未复用的 COS 文件已删除");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "普通图库图片清理失败. ImageId={ImageId}, RequestId={RequestId}", imageId, HttpContext.TraceIdentifier);
+            AddAudit("gallery.image.delete", "gallery_image", imageId.ToString(), "普通图库图片清理失败，记录保持下架状态", null, false, ex.Message);
+            await _context.SaveChangesAsync(cancellationToken);
+            return StatusCode(StatusCodes.Status502BadGateway, new
+            {
+                Code = 50202,
+                Message = "图片已从图库下架，但 COS 文件清理失败，可稍后重试删除",
+                RequestId = HttpContext.TraceIdentifier
+            });
+        }
+    }
+
+    [HttpPost("gallery/images/{imageId:int}/restore")]
+    public async Task<IActionResult> RestoreGalleryImage(int imageId, CancellationToken cancellationToken)
+    {
+        var image = await _context.images.FirstOrDefaultAsync(item => item.ImageID == imageId, cancellationToken);
+        if (image == null) return NotFoundEnvelope("图片记录不存在，已彻底删除的图片无法恢复");
+        if (!image.IsDeleted) return OkEnvelope(new { ImageId = imageId }, "图片已经处于上架状态");
+
+        image.IsDeleted = false;
+        image.DeletedAt = null;
+        image.DeletedByUserID = null;
+        image.UpdatedAt = DateTime.UtcNow;
+        AddAudit("gallery.image.restore", "gallery_image", imageId.ToString(), "恢复普通图库图片");
+        await _context.SaveChangesAsync(cancellationToken);
+        return OkEnvelope(new { ImageId = imageId, image.UpdatedAt }, "图片已恢复到公共图库");
     }
 
     private string? ValidateGalleryUpload(ImageUploadRequest request)

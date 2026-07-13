@@ -99,6 +99,7 @@ public static class AIInfrastructureServiceExtensions
         services.TryAddScoped<RoleLimitService>();
         services.TryAddScoped<IQuotaService, QuotaService>();
         services.TryAddScoped<QuotaService>();
+        services.TryAddScoped<IUsageQuotaService, UsageQuotaService>();
 
         return services;
     }

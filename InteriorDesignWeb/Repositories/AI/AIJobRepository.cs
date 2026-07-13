@@ -97,9 +97,6 @@ public class AIJobRepository : IAIJobRepository
         DateTime cleanupEligibleAt,
         CancellationToken cancellationToken = default)
     {
-        await using var transaction = await _context.Database
-            .BeginTransactionAsync(cancellationToken);
-
         var imageIds = job.Images
             .Select(image => image.AiImageID)
             .ToList();
@@ -142,7 +139,6 @@ public class AIJobRepository : IAIJobRepository
 
         _context.aigenerationjobs.Remove(job);
         await _context.SaveChangesAsync(cancellationToken);
-        await transaction.CommitAsync(cancellationToken);
     }
 
     public Task SaveChangesAsync(CancellationToken cancellationToken = default)

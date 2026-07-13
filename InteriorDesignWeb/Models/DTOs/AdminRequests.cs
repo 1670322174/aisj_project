@@ -36,3 +36,32 @@ public sealed class AdminResetPasswordRequest
     [Required, StringLength(128, MinimumLength = 10)]
     public string NewPassword { get; set; } = string.Empty;
 }
+
+public sealed class AdminUpdateUserQuotaRequest
+{
+    [Range(0, int.MaxValue)]
+    public int TotalUnits { get; set; }
+
+    [Range(0, int.MaxValue)]
+    public int RemainingUnits { get; set; }
+
+    [Range(0, int.MaxValue)]
+    public int AssistantTokenLimit5Hours { get; set; }
+
+    [Range(0, int.MaxValue)]
+    public int AssistantTokensUsed5Hours { get; set; }
+
+    public bool ResetAssistantWindow { get; set; }
+}
+
+public sealed class AdminUpdateGalleryImageRequest
+{
+    [Required, StringLength(255)]
+    public string FileName { get; set; } = string.Empty;
+
+    [Required, StringLength(50)]
+    public string RoomType { get; set; } = string.Empty;
+
+    [StringLength(1500)]
+    public string? Tags { get; set; }
+}

@@ -50,7 +50,7 @@ namespace InteriorDesignWeb.Services
 
             var limit = _roleLimitService.GetSchemeCreationLimit(user.Role);
             int currentCount = await _context.projects
-                .CountAsync(p => p.UserID == userId);
+                .CountAsync(p => p.UserID == userId && !p.IsDeleted);
 
             return currentCount < limit;
         }
@@ -59,7 +59,7 @@ namespace InteriorDesignWeb.Services
         {
             var project = await _context.projects
                 .Include(p => p.User)
-                .FirstOrDefaultAsync(p => p.ProjectID == projectId);
+                .FirstOrDefaultAsync(p => p.ProjectID == projectId && !p.IsDeleted);
 
             if (project?.User == null) return false;
 

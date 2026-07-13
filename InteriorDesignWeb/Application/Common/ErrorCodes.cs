@@ -25,4 +25,6 @@ public static class ErrorCodes
     public const string AiJobAccessDenied = "AI_JOB_ACCESS_DENIED";
     public const string AiProviderError = "AI_PROVIDER_ERROR";
     public const string AiJobTimeout = "AI_JOB_TIMEOUT";
+    public const string AssistantUnavailable = "ASSISTANT_UNAVAILABLE";
+    public const string AssistantOutputInvalid = "ASSISTANT_OUTPUT_INVALID";
 }

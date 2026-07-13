@@ -3,6 +3,8 @@
 
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Security.Cryptography;
+using System.Text;
 using InteriorDesignWeb.Application.Common;
 using InteriorDesignWeb.Config;
 using InteriorDesignWeb.Data;
@@ -22,6 +24,7 @@ public sealed class AIGenerationService : IAIGenerationService
     private readonly IAIProvider _provider;
     private readonly DesignHubContext _context;
     private readonly IAIResultService _resultService;
+    private readonly IUsageQuotaService _usageQuotaService;
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly ComfyUIServerOptions _serverOptions;
     private readonly ILogger<AIGenerationService> _logger;
@@ -38,6 +41,7 @@ public sealed class AIGenerationService : IAIGenerationService
         IAIProvider provider,
         DesignHubContext context,
         IAIResultService resultService,
+        IUsageQuotaService usageQuotaService,
         IServiceScopeFactory scopeFactory,
         IOptions<ComfyUIServerOptions> serverOptions,
         ILogger<AIGenerationService> logger)
@@ -47,6 +51,7 @@ public sealed class AIGenerationService : IAIGenerationService
         _provider = provider;
         _context = context;
         _resultService = resultService;
+        _usageQuotaService = usageQuotaService;
         _scopeFactory = scopeFactory;
         _serverOptions = serverOptions.Value;
         _logger = logger;
@@ -102,9 +107,11 @@ public sealed class AIGenerationService : IAIGenerationService
     public async Task<AIGenerationSubmitResponse> SubmitAsync(
         AIGenerationSubmitRequest request,
         int userId,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        string? idempotencyKey = null)
     {
         var workflow = _workflowRegistry.GetRequired(request.WorkflowCode);
+        await ValidateProjectBindingAsync(request, userId, cancellationToken);
         request.ModelCode ??= workflow.DefaultModelCode;
 
         var supportsNegativePrompt = !workflow.OutputType.Equals(
@@ -118,8 +125,37 @@ public sealed class AIGenerationService : IAIGenerationService
             : null;
 
         var workflowJson = _workflowBuilder.Build(workflow, request);
-        var jobId = Guid.NewGuid().ToString("N");
+        var jobId = string.IsNullOrWhiteSpace(idempotencyKey)
+            ? Guid.NewGuid().ToString("N")
+            : Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes($"{userId}:{idempotencyKey.Trim()}")))
+                .ToLowerInvariant()[..32];
+        var existingJob = await _context.aigenerationjobs.AsNoTracking()
+            .FirstOrDefaultAsync(item => item.JobId == jobId && item.UserID == userId, cancellationToken);
+        if (existingJob != null)
+        {
+            return new AIGenerationSubmitResponse
+            {
+                JobId = existingJob.JobId,
+                ProviderJobId = existingJob.ProviderJobId ?? existingJob.PromptId,
+                PromptId = existingJob.PromptId,
+                WorkflowCode = existingJob.WorkflowCode,
+                ModelCode = existingJob.ModelCode,
+                OutputType = workflow.OutputType,
+                Status = existingJob.Status,
+                ProgressValue = existingJob.ProgressValue
+            };
+        }
         var inputJson = JsonSerializer.Serialize(request, JsonOptions);
+
+        await _usageQuotaService.ReserveGenerationAsync(
+            userId,
+            jobId,
+            workflow.CostUnits,
+            workflow.WorkflowCode,
+            request.ModelCode,
+            _provider.ProviderType,
+            inputJson,
+            cancellationToken);
 
         var job = new AiGenerationJob
         {
@@ -142,8 +178,17 @@ public sealed class AIGenerationService : IAIGenerationService
             UpdatedAt = DateTime.UtcNow
         };
 
-        await _context.aigenerationjobs.AddAsync(job, cancellationToken);
-        await _context.SaveChangesAsync(cancellationToken);
+        var providerAccepted = false;
+        try
+        {
+            await _context.aigenerationjobs.AddAsync(job, cancellationToken);
+            await _context.SaveChangesAsync(cancellationToken);
+        }
+        catch
+        {
+            await _usageQuotaService.RefundGenerationAsync(userId, jobId, cancellationToken);
+            throw;
+        }
 
         try
         {
@@ -154,6 +199,7 @@ public sealed class AIGenerationService : IAIGenerationService
             await _context.SaveChangesAsync(cancellationToken);
 
             var submitResult = await _provider.SubmitAsync(workflowJson, cancellationToken);
+            providerAccepted = true;
 
             job.PromptId = submitResult.ProviderJobId;
             job.ProviderJobId = submitResult.ProviderJobId;
@@ -163,6 +209,7 @@ public sealed class AIGenerationService : IAIGenerationService
             job.StartedAt = DateTime.UtcNow;
             job.UpdatedAt = DateTime.UtcNow;
             await _context.SaveChangesAsync(cancellationToken);
+            await _usageQuotaService.MarkGenerationSubmittedAsync(jobId, cancellationToken);
 
             // 请求返回后在独立作用域轮询 ComfyUI Server，避免继续占用前端请求线程。
             return new AIGenerationSubmitResponse
@@ -185,6 +232,8 @@ public sealed class AIGenerationService : IAIGenerationService
             job.CompletedAt = DateTime.UtcNow;
             job.UpdatedAt = DateTime.UtcNow;
             await _context.SaveChangesAsync(cancellationToken);
+            if (!providerAccepted)
+                await _usageQuotaService.RefundGenerationAsync(userId, jobId, cancellationToken);
 
             _logger.LogError(
                 ex,
@@ -193,6 +242,40 @@ public sealed class AIGenerationService : IAIGenerationService
                 workflow.WorkflowCode);
 
             throw;
+        }
+    }
+
+    private async Task ValidateProjectBindingAsync(
+        AIGenerationSubmitRequest request,
+        int userId,
+        CancellationToken cancellationToken)
+    {
+        if (request.ProjectId == null)
+        {
+            if (request.RoomId != null || request.AutoAddToProject)
+            {
+                throw AppException.Validation("选择房间或自动加入方案时必须先选择方案。");
+            }
+            return;
+        }
+
+        var projectExists = await _context.projects.AsNoTracking().AnyAsync(
+            project => project.ProjectID == request.ProjectId
+                && project.UserID == userId
+                && !project.IsDeleted,
+            cancellationToken);
+        if (!projectExists) throw AppException.Forbidden("方案不存在或不属于当前用户。");
+
+        if (request.RoomId != null)
+        {
+            var roomExists = await _context.projectrooms.AsNoTracking().AnyAsync(
+                room => room.RoomID == request.RoomId && room.ProjectID == request.ProjectId,
+                cancellationToken);
+            if (!roomExists) throw AppException.Validation("房间不存在或不属于所选方案。");
+        }
+        else if (request.AutoAddToProject)
+        {
+            throw AppException.Validation("自动加入方案时必须选择具体房间。");
         }
     }
 

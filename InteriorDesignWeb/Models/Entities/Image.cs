@@ -38,5 +38,15 @@ namespace InteriorDesignWeb.Models.Entities
         [Required]
         [StringLength(50)]
         public string? Room { get; set; }
+
+        public bool IsDeleted { get; set; }
+
+        public DateTime? DeletedAt { get; set; }
+
+        public int? DeletedByUserID { get; set; }
+
+        public DateTime? UpdatedAt { get; set; }
+
+        public User? DeletedByUser { get; set; }
     }
 }

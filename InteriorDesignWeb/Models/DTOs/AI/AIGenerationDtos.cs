@@ -36,6 +36,12 @@ public class AIGenerationSubmitRequest
     public int? RoomId { get; set; }
 
     /// <summary>
+    /// When true, successful AI images are attached to ProjectId/RoomId.
+    /// Ownership is always verified by the backend.
+    /// </summary>
+    public bool AutoAddToProject { get; set; }
+
+    /// <summary>
     /// 常用源图文件名。应先通过 /api/ai/generations/upload 上传到 ComfyUI Server 获得。
     /// </summary>
     public string? SourceImageName { get; set; }

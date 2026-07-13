@@ -20,7 +20,8 @@ public interface IAIGenerationService
     Task<AIGenerationSubmitResponse> SubmitAsync(
         AIGenerationSubmitRequest request,
         int userId,
-        CancellationToken cancellationToken = default);
+        CancellationToken cancellationToken = default,
+        string? idempotencyKey = null);
 
     Task RefreshAsync(
         string jobId,

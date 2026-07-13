@@ -10,6 +10,8 @@ namespace InteriorDesignWeb.Services
         int GetImagesPerSchemeLimit(IEnumerable<string> roles);
         int GetSchemeCreationLimit(UserRole role);
         int GetImagesPerSchemeLimit(UserRole role);
+        int GetAIGenerationUnits(UserRole role);
+        int GetAssistantTokens5Hours(UserRole role);
     }
     public class RoleLimitService : IRoleLimitService
     {
@@ -29,6 +31,28 @@ namespace InteriorDesignWeb.Services
             => _config.ImagesPerScheme.TryGetValue(role.ToString(), out var limit)
                 ? limit
                 : int.MaxValue;
+
+        public int GetAIGenerationUnits(UserRole role)
+            => _config.AIGenerationUnits.TryGetValue(role.ToString(), out var limit)
+                ? limit
+                : role switch
+                {
+                    UserRole.FreeUser => 100,
+                    UserRole.Member => 1000,
+                    UserRole.PremiumMember => 10000,
+                    _ => 1000000
+                };
+
+        public int GetAssistantTokens5Hours(UserRole role)
+            => _config.AssistantTokens5Hours.TryGetValue(role.ToString(), out var limit)
+                ? limit
+                : role switch
+                {
+                    UserRole.FreeUser => 20000,
+                    UserRole.Member => 50000,
+                    UserRole.PremiumMember => 150000,
+                    _ => 1000000
+                };
 
         public int GetSchemeCreationLimit(IEnumerable<string> roles)
             => roles.Select(role => GetSchemeCreationLimit(Enum.Parse<UserRole>(role)))

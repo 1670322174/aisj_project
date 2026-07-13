@@ -95,7 +95,16 @@ export interface AdminJobSummary {
 
 export interface AdminUserDetail {
   summary: AdminUserSummary
-  quota: { total: number; used: number; available: number }
+  quota: {
+    total: number
+    used: number
+    available: number
+    assistantTokenLimit5Hours: number
+    assistantTokensUsed5Hours: number
+    assistantTokensRemaining5Hours: number
+    assistantTokenWindowStartedAt: string
+    assistantTokenWindowEndsAt: string
+  }
   counts: { projects: number; jobs: number; images: number; sessions: number }
   recentProjects: AdminProjectSummary[]
   recentJobs: AdminJobSummary[]
@@ -162,10 +171,30 @@ export interface AdminGalleryImage {
   imageId: string
   fileName: string
   roomType: string
-  style: string
+  tags: string
   fileSize: number
   thumbnailUrl: string
+  originalUrl: string
   createdAt: string
+  updatedAt: string
+  deletedAt: string
+  isDeleted: boolean
+  referenceCount: number
+}
+
+export interface AdminGalleryQuery {
+  search?: string
+  page?: number
+  pageSize?: number
+  status?: 'active' | 'deleted' | 'all'
+  room?: string
+  referenced?: boolean
+}
+
+export interface UpdateGalleryImageInput {
+  fileName: string
+  roomType: string
+  tags?: string
 }
 
 export interface AdminUserQuery {
@@ -181,6 +210,14 @@ export interface CreateAdminUserInput {
   password: string
   phoneNumber?: string
   role: AdminRole
+}
+
+export interface UpdateAdminUserQuotaInput {
+  totalUnits: number
+  remainingUnits: number
+  assistantTokenLimit5Hours: number
+  assistantTokensUsed5Hours: number
+  resetAssistantWindow: boolean
 }
 
 export interface GalleryUploadInput {
@@ -416,6 +453,11 @@ async function getUserDetail(userId: string): Promise<AdminUserDetail> {
       total: numberValue(quota, ['total', 'Total']),
       used: numberValue(quota, ['used', 'Used']),
       available: numberValue(quota, ['available', 'Available', 'remaining', 'Remaining']),
+      assistantTokenLimit5Hours: numberValue(quota, ['assistantTokenLimit5Hours', 'AssistantTokenLimit5Hours']),
+      assistantTokensUsed5Hours: numberValue(quota, ['assistantTokensUsed5Hours', 'AssistantTokensUsed5Hours']),
+      assistantTokensRemaining5Hours: numberValue(quota, ['assistantTokensRemaining5Hours', 'AssistantTokensRemaining5Hours']),
+      assistantTokenWindowStartedAt: textValue(quota, ['assistantTokenWindowStartedAt', 'AssistantTokenWindowStartedAt']),
+      assistantTokenWindowEndsAt: textValue(quota, ['assistantTokenWindowEndsAt', 'AssistantTokenWindowEndsAt']),
     },
     counts: {
       projects: numberValue(counts, ['projects', 'Projects']),
@@ -436,6 +478,13 @@ async function getUserDetail(userId: string): Promise<AdminUserDetail> {
     recentActivities: arrayValue(data, ['recentActivities', 'RecentActivities']).map(normalizeActivity),
     sessions: arrayValue(data, ['sessions', 'Sessions']).map(normalizeSession),
   }
+}
+
+async function updateUserQuota(userId: string, input: UpdateAdminUserQuotaInput): Promise<void> {
+  await requestWithAuth(`/Admin/users/${encodeURIComponent(userId)}/quota`, {
+    method: 'PUT',
+    body: JSON.stringify(input),
+  })
 }
 
 async function revokeSession(userId: string, sessionId: string): Promise<void> {
@@ -541,11 +590,58 @@ async function uploadGalleryImage(input: GalleryUploadInput): Promise<AdminGalle
     imageId: textValue(data, ['imageId', 'ImageId', 'imageID', 'ImageID']),
     fileName: textValue(data, ['fileName', 'FileName'], input.file.name),
     roomType: textValue(data, ['roomType', 'RoomType', 'room', 'Room'], input.roomType),
-    style: textValue(data, ['style', 'Style'], input.style ?? ''),
+    tags: '',
     fileSize: numberValue(data, ['fileSize', 'FileSize'], input.file.size),
     thumbnailUrl: textValue(data, ['thumbnailUrl', 'ThumbnailUrl']),
+    originalUrl: textValue(data, ['originalUrl', 'OriginalUrl']),
     createdAt: textValue(data, ['createdAt', 'CreatedAt'], new Date().toISOString()),
+    updatedAt: '',
+    deletedAt: '',
+    isDeleted: false,
+    referenceCount: 0,
   }
+}
+
+function normalizeGalleryImage(value: unknown): AdminGalleryImage {
+  const raw = record(value)
+  return {
+    imageId: textValue(raw, ['imageId', 'ImageId', 'imageID', 'ImageID']),
+    fileName: textValue(raw, ['fileName', 'FileName']),
+    roomType: textValue(raw, ['roomType', 'RoomType', 'room', 'Room']),
+    tags: textValue(raw, ['tags', 'Tags']),
+    fileSize: numberValue(raw, ['fileSize', 'FileSize']),
+    thumbnailUrl: textValue(raw, ['thumbnailUrl', 'ThumbnailUrl']),
+    originalUrl: textValue(raw, ['originalUrl', 'OriginalUrl']),
+    createdAt: textValue(raw, ['createdAt', 'CreatedAt', 'uploadTime', 'UploadTime']),
+    updatedAt: textValue(raw, ['updatedAt', 'UpdatedAt']),
+    deletedAt: textValue(raw, ['deletedAt', 'DeletedAt']),
+    isDeleted: booleanValue(raw, ['isDeleted', 'IsDeleted']),
+    referenceCount: numberValue(raw, ['referenceCount', 'ReferenceCount']),
+  }
+}
+
+async function getGalleryImages(query: AdminGalleryQuery): Promise<AdminPagedResult<AdminGalleryImage>> {
+  const data = unwrap(await requestWithAuth(`/Admin/gallery/images${queryString(query)}`))
+  return normalizePaged(data, normalizeGalleryImage)
+}
+
+async function updateGalleryImage(imageId: string, input: UpdateGalleryImageInput): Promise<void> {
+  await requestWithAuth(`/Admin/gallery/images/${encodeURIComponent(imageId)}`, {
+    method: 'PUT',
+    body: JSON.stringify(input),
+  })
+}
+
+async function deleteGalleryImage(imageId: string): Promise<{ mode: string; referenceCount: number }> {
+  const data = unwrap(await requestWithAuth(`/Admin/gallery/images/${encodeURIComponent(imageId)}`, { method: 'DELETE' }))
+  return {
+    mode: textValue(data, ['mode', 'Mode']),
+    referenceCount: numberValue(data, ['referenceCount', 'ReferenceCount']),
+  }
+}
+
+async function restoreGalleryImage(imageId: string): Promise<void> {
+  await requestWithAuth(`/Admin/gallery/images/${encodeURIComponent(imageId)}/restore`, { method: 'POST' })
 }
 
 export const adminApi = {
@@ -556,10 +652,15 @@ export const adminApi = {
   setUserStatus,
   resetUserPassword,
   getUserDetail,
+  updateUserQuota,
   revokeSession,
   revokeAllSessions,
   getSystem,
   getApis,
   getAuditLogs,
   uploadGalleryImage,
+  getGalleryImages,
+  updateGalleryImage,
+  deleteGalleryImage,
+  restoreGalleryImage,
 }

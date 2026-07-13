@@ -15,13 +15,16 @@ import {
   Loader2,
   LockKeyhole,
   MonitorCog,
+  Pencil,
   Plus,
   RefreshCw,
+  RotateCcw,
   Search,
   Server,
   ShieldCheck,
   UploadCloud,
   Users,
+  Trash2,
   X,
 } from 'lucide-react'
 import { FormEvent, ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -29,6 +32,7 @@ import {
   adminApi,
   type AdminApiEndpoint,
   type AdminAuditLog,
+  type AdminGalleryImage,
   type AdminOverview,
   type AdminRole,
   type AdminSession,
@@ -420,12 +424,21 @@ function UserDetailDrawer({ userId, onClose, onChanged }: { userId: string; onCl
   const [error, setError] = useState('')
   const [password, setPassword] = useState('')
   const [savingPassword, setSavingPassword] = useState(false)
+  const [savingQuota, setSavingQuota] = useState(false)
+  const [quotaForm, setQuotaForm] = useState({ totalUnits: 0, remainingUnits: 0, assistantTokenLimit5Hours: 0, assistantTokensUsed5Hours: 0 })
 
   const load = useCallback(async () => {
     setLoading(true)
     setError('')
     try {
-      setDetail(await adminApi.getUserDetail(userId))
+      const nextDetail = await adminApi.getUserDetail(userId)
+      setDetail(nextDetail)
+      setQuotaForm({
+        totalUnits: nextDetail.quota.total,
+        remainingUnits: nextDetail.quota.available,
+        assistantTokenLimit5Hours: nextDetail.quota.assistantTokenLimit5Hours,
+        assistantTokensUsed5Hours: nextDetail.quota.assistantTokensUsed5Hours,
+      })
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : '用户详情加载失败')
     } finally {
@@ -465,6 +478,28 @@ function UserDetailDrawer({ userId, onClose, onChanged }: { userId: string; onCl
     }
   }
 
+  async function saveQuota(resetAssistantWindow = false) {
+    if (quotaForm.remainingUnits > quotaForm.totalUnits) {
+      setError('生图剩余额度不能大于总额度。')
+      return
+    }
+    if (quotaForm.assistantTokensUsed5Hours > quotaForm.assistantTokenLimit5Hours) {
+      setError('助手已使用 Token 不能大于 5 小时上限。')
+      return
+    }
+    setSavingQuota(true)
+    setError('')
+    try {
+      await adminApi.updateUserQuota(userId, { ...quotaForm, resetAssistantWindow })
+      await load()
+      onChanged()
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : '额度保存失败')
+    } finally {
+      setSavingQuota(false)
+    }
+  }
+
   return (
     <div className="fixed inset-0 z-[85] bg-black/55 backdrop-blur-sm" onMouseDown={onClose}>
       <aside className="absolute inset-y-0 right-0 w-full max-w-2xl overflow-y-auto border-l border-[var(--border-default)] bg-[var(--bg-base)] shadow-2xl animate-slide-up sm:animate-soft-pop" onMouseDown={(event) => event.stopPropagation()}>
@@ -497,6 +532,30 @@ function UserDetailDrawer({ userId, onClose, onChanged }: { userId: string; onCl
                 <div className="flex items-center justify-between text-xs"><span className="text-[var(--text-secondary)]">AI 额度</span><span className="font-medium text-[var(--text-primary)]">{detail.quota.available} / {detail.quota.total}</span></div>
                 <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-[var(--border-default)]"><div className="h-full rounded-full bg-[var(--accent)]" style={{ width: `${detail.quota.total ? Math.min(100, detail.quota.available / detail.quota.total * 100) : 0}%` }} /></div>
               </div>
+            </section>
+
+            <section className={cn(panelClass, 'p-5')}>
+              <SectionHeader title="AI 使用额度" description="生图按工作流成本扣减；助手额度每 5 小时自动开启新窗口。" />
+              <div className="grid gap-3 sm:grid-cols-2">
+                <label className="text-xs text-[var(--text-secondary)]">生图总额度
+                  <input type="number" min={0} value={quotaForm.totalUnits} onChange={(event) => setQuotaForm((value) => ({ ...value, totalUnits: Math.max(0, Number(event.target.value)) }))} className={cn(inputClass, 'mt-1.5')} />
+                </label>
+                <label className="text-xs text-[var(--text-secondary)]">生图剩余额度
+                  <input type="number" min={0} value={quotaForm.remainingUnits} onChange={(event) => setQuotaForm((value) => ({ ...value, remainingUnits: Math.max(0, Number(event.target.value)) }))} className={cn(inputClass, 'mt-1.5')} />
+                </label>
+                <label className="text-xs text-[var(--text-secondary)]">助手 5 小时 Token 上限
+                  <input type="number" min={0} value={quotaForm.assistantTokenLimit5Hours} onChange={(event) => setQuotaForm((value) => ({ ...value, assistantTokenLimit5Hours: Math.max(0, Number(event.target.value)) }))} className={cn(inputClass, 'mt-1.5')} />
+                </label>
+                <label className="text-xs text-[var(--text-secondary)]">当前窗口已使用 Token
+                  <input type="number" min={0} value={quotaForm.assistantTokensUsed5Hours} onChange={(event) => setQuotaForm((value) => ({ ...value, assistantTokensUsed5Hours: Math.max(0, Number(event.target.value)) }))} className={cn(inputClass, 'mt-1.5')} />
+                </label>
+              </div>
+              <p className="mt-3 text-[11px] text-[var(--text-tertiary)]">当前窗口结束：{formatDate(detail.quota.assistantTokenWindowEndsAt)}</p>
+              <div className="mt-4 flex flex-wrap justify-end gap-2">
+                <button type="button" disabled={savingQuota} onClick={() => void saveQuota(true)} className={secondaryButtonClass}>重置助手窗口</button>
+                <button type="button" disabled={savingQuota} onClick={() => void saveQuota(false)} className={primaryButtonClass}>{savingQuota && <Loader2 size={15} className="animate-spin" />}保存额度</button>
+              </div>
+              {error && <p className="mt-2 text-xs text-red-300">{error}</p>}
             </section>
 
             <section className={cn(panelClass, 'p-5')}>
@@ -631,6 +690,39 @@ function UsersPanel({ refreshKey, notify }: { refreshKey: number; notify: (messa
   )
 }
 
+function GalleryEditModal({ image, onClose, onSaved }: { image: AdminGalleryImage; onClose: () => void; onSaved: () => void }) {
+  const [fileName, setFileName] = useState(image.fileName)
+  const [roomType, setRoomType] = useState(image.roomType)
+  const [tags, setTags] = useState(image.tags)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+
+  async function submit(event: FormEvent) {
+    event.preventDefault()
+    setSaving(true); setError('')
+    try {
+      await adminApi.updateGalleryImage(image.imageId, { fileName, roomType, tags })
+      onSaved()
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : '保存失败')
+    } finally { setSaving(false) }
+  }
+
+  return (
+    <ModalShell title="编辑图库图片" description={`图片 ID：${image.imageId}`} onClose={onClose}>
+      <form onSubmit={submit} className="space-y-4">
+        <img src={image.thumbnailUrl} alt={image.fileName} className="h-44 w-full rounded-xl bg-[var(--bg-input)] object-contain" />
+        <label className="block text-xs text-[var(--text-secondary)]">图片名称<input required maxLength={255} value={fileName} onChange={(event) => setFileName(event.target.value)} className={cn(inputClass, 'mt-1.5')} /></label>
+        <label className="block text-xs text-[var(--text-secondary)]">房间类型<input required maxLength={50} value={roomType} onChange={(event) => setRoomType(event.target.value)} className={cn(inputClass, 'mt-1.5')} /></label>
+        <label className="block text-xs text-[var(--text-secondary)]">Tags<textarea maxLength={1500} rows={5} value={tags} onChange={(event) => setTags(event.target.value)} className={cn(inputClass, 'mt-1.5 resize-y')} placeholder="例如：风格:现代;材质:木材;包含元素:落地窗" /></label>
+        <p className="text-[11px] leading-5 text-[var(--text-tertiary)]">标签使用分号分隔，可被普通图库和管理员图库搜索匹配。</p>
+        {error && <ErrorPanel message={error} />}
+        <div className="flex justify-end gap-2"><button type="button" onClick={onClose} className={secondaryButtonClass}>取消</button><button type="submit" disabled={saving} className={primaryButtonClass}>{saving && <Loader2 size={15} className="animate-spin" />}保存修改</button></div>
+      </form>
+    </ModalShell>
+  )
+}
+
 function GalleryPanel({ notify }: { notify: (message: string, type?: 'success' | 'error') => void }) {
   const fileRef = useRef<HTMLInputElement>(null)
   const [file, setFile] = useState<File | null>(null)
@@ -642,6 +734,39 @@ function GalleryPanel({ notify }: { notify: (message: string, type?: 'success' |
   const [elements, setElements] = useState('')
   const [other, setOther] = useState('')
   const [uploading, setUploading] = useState(false)
+  const [items, setItems] = useState<AdminGalleryImage[]>([])
+  const [search, setSearch] = useState('')
+  const [roomFilter, setRoomFilter] = useState('')
+  const [status, setStatus] = useState<'active' | 'deleted' | 'all'>('active')
+  const [referenceFilter, setReferenceFilter] = useState<'all' | 'referenced' | 'unreferenced'>('all')
+  const [page, setPage] = useState(1)
+  const [totalPages, setTotalPages] = useState(1)
+  const [totalCount, setTotalCount] = useState(0)
+  const [loading, setLoading] = useState(true)
+  const [listError, setListError] = useState('')
+  const [reloadKey, setReloadKey] = useState(0)
+  const [editing, setEditing] = useState<AdminGalleryImage | null>(null)
+  const [actionId, setActionId] = useState('')
+
+  useEffect(() => { setPage(1) }, [search, roomFilter, status, referenceFilter])
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setLoading(true); setListError('')
+      adminApi.getGalleryImages({
+        page,
+        pageSize: 24,
+        search: search.trim() || undefined,
+        room: roomFilter.trim() || undefined,
+        status,
+        referenced: referenceFilter === 'all' ? undefined : referenceFilter === 'referenced',
+      }).then((result) => {
+        setItems(result.items); setTotalPages(result.totalPages); setTotalCount(result.totalCount)
+      }).catch((reason) => setListError(reason instanceof Error ? reason.message : '图库加载失败'))
+        .finally(() => setLoading(false))
+    }, search || roomFilter ? 300 : 0)
+    return () => window.clearTimeout(timer)
+  }, [page, search, roomFilter, status, referenceFilter, reloadKey])
 
   useEffect(() => {
     if (!file) { setPreview(''); return }
@@ -658,15 +783,75 @@ function GalleryPanel({ notify }: { notify: (message: string, type?: 'success' |
       await adminApi.uploadGalleryImage({ file, roomType, houseType, style, material, elements, other })
       notify('图片已上传到普通图库并写入数据库')
       setFile(null); setStyle(''); setMaterial(''); setElements(''); setOther('')
+      setStatus('active'); setPage(1); setReloadKey((value) => value + 1)
       if (fileRef.current) fileRef.current.value = ''
     } catch (reason) {
       notify(reason instanceof Error ? reason.message : '图片上传失败', 'error')
     } finally { setUploading(false) }
   }
 
+  async function removeImage(image: AdminGalleryImage) {
+    const warning = image.referenceCount > 0
+      ? `该图片仍被 ${image.referenceCount} 个方案位置引用。删除后只会从公共图库下架，方案中的图片会继续保留。是否继续？`
+      : '该图片没有方案引用。删除后将同时清理未被复用的 COS 原图和缩略图，无法恢复。是否继续？'
+    if (!window.confirm(warning)) return
+    setActionId(image.imageId)
+    try {
+      const result = await adminApi.deleteGalleryImage(image.imageId)
+      notify(result.mode === 'soft_delete' ? `图片已下架，保留 ${result.referenceCount} 个方案引用` : '图片及 COS 文件已彻底删除')
+      setReloadKey((value) => value + 1)
+    } catch (reason) {
+      notify(reason instanceof Error ? reason.message : '删除失败', 'error')
+      setReloadKey((value) => value + 1)
+    } finally { setActionId('') }
+  }
+
+  async function restoreImage(image: AdminGalleryImage) {
+    setActionId(image.imageId)
+    try {
+      await adminApi.restoreGalleryImage(image.imageId)
+      notify('图片已恢复到公共图库')
+      setReloadKey((value) => value + 1)
+    } catch (reason) {
+      notify(reason instanceof Error ? reason.message : '恢复失败', 'error')
+    } finally { setActionId('') }
+  }
+
   return (
-    <div className="grid gap-5 xl:grid-cols-[minmax(0,1.25fr)_minmax(320px,0.75fr)]">
+    <div className="space-y-5">
       <section className={cn(panelClass, 'p-5')}>
+        <SectionHeader title="图库素材" description="查看全部普通图库图片，按名称、房间或标签搜索，并管理上架状态和方案引用。" />
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-[minmax(260px,1fr)_180px_160px_180px_auto]">
+          <label className="relative"><Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[var(--text-tertiary)]" /><input value={search} onChange={(event) => setSearch(event.target.value)} className={cn(inputClass, 'pl-10')} placeholder="搜索名称、房间或 Tags" /></label>
+          <input value={roomFilter} onChange={(event) => setRoomFilter(event.target.value)} className={inputClass} placeholder="筛选房间" />
+          <select value={status} onChange={(event) => setStatus(event.target.value as typeof status)} className={inputClass}><option value="active">已上架</option><option value="deleted">已下架</option><option value="all">全部状态</option></select>
+          <select value={referenceFilter} onChange={(event) => setReferenceFilter(event.target.value as typeof referenceFilter)} className={inputClass}><option value="all">全部引用状态</option><option value="referenced">方案正在引用</option><option value="unreferenced">未被方案引用</option></select>
+          <button onClick={() => setReloadKey((value) => value + 1)} className={secondaryButtonClass}><RefreshCw size={15} />刷新</button>
+        </div>
+      </section>
+
+      <section className={cn(panelClass, 'overflow-hidden')}>
+        {loading ? <PageLoading label="正在读取图库…" /> : listError ? <ErrorPanel message={listError} /> : items.length ? <>
+          <div className="grid gap-4 p-4 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
+            {items.map((image) => <article key={image.imageId} className={cn('overflow-hidden rounded-2xl border bg-[var(--bg-input)]', image.isDeleted ? 'border-red-400/25 opacity-80' : 'border-[var(--border-default)]')}>
+              <a href={image.originalUrl} target="_blank" rel="noreferrer" className="relative block h-48 bg-black/15">
+                <img src={image.thumbnailUrl} alt={image.fileName} loading="lazy" className="h-full w-full object-contain" />
+                <span className="absolute left-2 top-2 rounded-lg bg-black/65 px-2 py-1 text-[10px] text-white">ID {image.imageId}</span>
+                {image.isDeleted && <span className="absolute right-2 top-2 rounded-lg bg-red-500/85 px-2 py-1 text-[10px] font-semibold text-white">已下架</span>}
+              </a>
+              <div className="space-y-3 p-3.5">
+                <div><p className="truncate text-sm font-semibold text-[var(--text-primary)]" title={image.fileName}>{image.fileName}</p><p className="mt-1 text-[11px] text-[var(--text-tertiary)]">{image.roomType || '未分类'} · {formatBytes(image.fileSize)} · 引用 {image.referenceCount}</p></div>
+                <p className="line-clamp-2 min-h-9 text-[11px] leading-[18px] text-[var(--text-secondary)]" title={image.tags}>{image.tags || '暂无标签'}</p>
+                <div className="flex flex-wrap gap-2"><button onClick={() => setEditing(image)} className={cn(secondaryButtonClass, 'min-w-20 flex-1 px-2 py-1.5 text-xs')}><Pencil size={13} />编辑</button>{image.isDeleted ? <><button disabled={actionId === image.imageId} onClick={() => void restoreImage(image)} className={cn(secondaryButtonClass, 'min-w-20 flex-1 px-2 py-1.5 text-xs text-emerald-300')}><RotateCcw size={13} />恢复</button>{image.referenceCount === 0 && <button disabled={actionId === image.imageId} onClick={() => void removeImage(image)} className={cn(secondaryButtonClass, 'min-w-20 flex-1 px-2 py-1.5 text-xs text-red-300')}><Trash2 size={13} />彻底清理</button>}</> : <button disabled={actionId === image.imageId} onClick={() => void removeImage(image)} className={cn(secondaryButtonClass, 'min-w-20 flex-1 px-2 py-1.5 text-xs text-red-300')}><Trash2 size={13} />删除</button>}</div>
+              </div>
+            </article>)}
+          </div>
+          <div className="flex flex-col gap-3 border-t border-[var(--border-default)] px-5 py-3 sm:flex-row sm:items-center sm:justify-between"><p className="text-xs text-[var(--text-tertiary)]">第 {page}/{totalPages} 页，共 {formatNumber(totalCount)} 张</p><div className="flex gap-2"><button disabled={page <= 1} onClick={() => setPage((value) => value - 1)} className={secondaryButtonClass}><ChevronLeft size={14} />上一页</button><button disabled={page >= totalPages} onClick={() => setPage((value) => value + 1)} className={secondaryButtonClass}>下一页<ChevronRight size={14} /></button></div></div>
+        </> : <EmptyState icon={<FileImage size={21} />} title="没有匹配的图库图片" description="调整关键词、状态或引用筛选条件。" />}
+      </section>
+
+      <div className="grid gap-5 xl:grid-cols-[minmax(0,1.25fr)_minmax(320px,0.75fr)]">
+        <section className={cn(panelClass, 'p-5')}>
         <SectionHeader title="上传到 COS 普通图库" description="后端会校验管理员权限、文件类型与大小，并同步创建缩略图和数据库记录。" />
         <form onSubmit={submit} className="space-y-4">
           <button type="button" onClick={() => fileRef.current?.click()} className="group flex min-h-60 w-full flex-col items-center justify-center overflow-hidden rounded-2xl border border-dashed border-[var(--border-strong)] bg-[var(--bg-input)] hover:border-[var(--accent-border)]">
@@ -684,11 +869,13 @@ function GalleryPanel({ notify }: { notify: (message: string, type?: 'success' |
           </div>
           <button type="submit" disabled={!file || uploading} className={cn(primaryButtonClass, 'w-full sm:w-auto')}>{uploading ? <Loader2 size={16} className="animate-spin" /> : <UploadCloud size={16} />}{uploading ? '正在上传并生成缩略图…' : '上传到普通图库'}</button>
         </form>
-      </section>
-      <aside className="space-y-5">
+        </section>
+        <aside className="space-y-5">
         <section className={cn(panelClass, 'p-5')}><SectionHeader title="上传检查清单" /><div className="space-y-3 text-xs leading-5 text-[var(--text-secondary)]">{['确认图片拥有合法使用权', '房间和风格信息尽量准确', '避免上传包含个人隐私的原图', '上传成功后到普通图库搜索验证', '若云端返回 Forbidden，检查普通图库 Bucket 权限与区域配置'].map((item) => <p key={item} className="flex gap-2"><CheckCircle2 size={15} className="mt-0.5 shrink-0 text-emerald-400" />{item}</p>)}</div></section>
         <section className="rounded-2xl border border-amber-400/20 bg-amber-400/8 p-5"><p className="flex items-center gap-2 text-sm font-semibold text-amber-300"><AlertCircle size={17} />上传链路</p><p className="mt-2 text-xs leading-5 text-amber-100/65">浏览器只把文件交给本站后端；COS 密钥始终留在服务器。后端上传原图、缩略图并写入数据库，前端不会接触 SecretKey。</p></section>
-      </aside>
+        </aside>
+      </div>
+      {editing && <GalleryEditModal image={editing} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); notify('图片信息已更新'); setReloadKey((value) => value + 1) }} />}
     </div>
   )
 }

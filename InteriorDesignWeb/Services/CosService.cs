@@ -400,6 +400,40 @@
             _urlCache.TryRemove(normalizedKey, out _);
         }
 
+        /// <summary>
+        /// Deletes an object from the ordinary gallery bucket. The caller must
+        /// first verify that no other database record uses the same object key.
+        /// Missing objects are treated as already deleted so cleanup is retryable.
+        /// </summary>
+        public void DeleteDefaultObject(string objectKey)
+        {
+            if (string.IsNullOrWhiteSpace(objectKey))
+            {
+                return;
+            }
+
+            var bucket = _config["COS:Bucket"]
+                ?? throw new ConfigurationException("缺少普通图库存储桶配置: Bucket");
+            var normalizedKey = objectKey.Replace("\\", "/").TrimStart('/');
+
+            try
+            {
+                var result = _cosXml.DeleteObject(new DeleteObjectRequest(bucket, normalizedKey));
+                if (result.httpCode != 404 && (result.httpCode is < 200 or >= 300))
+                {
+                    throw new CosException(
+                        $"COS 删除失败: HTTP {result.httpCode}",
+                        new InvalidOperationException(result.httpMessage));
+                }
+            }
+            catch (CosServerException ex) when (ex.statusCode == 404)
+            {
+                // Idempotent cleanup: the desired final state already exists.
+            }
+
+            _urlCache.TryRemove(normalizedKey, out _);
+        }
+
         public async Task<(string Url, string SignedUrl)> GetImageInfoAsync(
         int imageId,
         string? type = null,

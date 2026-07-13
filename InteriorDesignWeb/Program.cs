@@ -3,8 +3,11 @@
 
 using InteriorDesignWeb.Extensions;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.HttpOverrides;
+using Microsoft.AspNetCore.ResponseCompression;
 using Microsoft.Extensions.FileProviders;
+using System.Net;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -27,11 +30,44 @@ builder.Services.AddApplicationControllers();
 builder.Services.AddSwaggerDocumentation();
 builder.Services.AddCorsPolicies(builder.Configuration, builder.Environment);
 builder.Services.AddApplicationRateLimiting();
+builder.Services.AddResponseCompression(options =>
+{
+    options.EnableForHttps = true;
+    options.MimeTypes = ResponseCompressionDefaults.MimeTypes.Concat([
+        "application/json",
+        "image/svg+xml"
+    ]);
+});
+builder.Services.AddHsts(options =>
+{
+    options.MaxAge = TimeSpan.FromDays(180);
+    options.IncludeSubDomains = false;
+});
+
+var dataProtection = builder.Services
+    .AddDataProtection()
+    .SetApplicationName("InteriorDesignWeb");
+var dataProtectionKeysPath = builder.Configuration["DataProtection:KeysPath"];
+if (!string.IsNullOrWhiteSpace(dataProtectionKeysPath))
+{
+    var resolvedKeysPath = Path.IsPathRooted(dataProtectionKeysPath)
+        ? dataProtectionKeysPath
+        : Path.Combine(builder.Environment.ContentRootPath, dataProtectionKeysPath);
+    dataProtection.PersistKeysToFileSystem(new DirectoryInfo(resolvedKeysPath));
+}
+
 builder.Services.Configure<ForwardedHeadersOptions>(options =>
 {
     options.ForwardedHeaders = ForwardedHeaders.XForwardedFor
         | ForwardedHeaders.XForwardedProto;
     options.ForwardLimit = 1;
+    foreach (var proxy in builder.Configuration.GetSection("ReverseProxy:KnownProxies").Get<string[]>() ?? [])
+    {
+        if (IPAddress.TryParse(proxy, out var address) && !options.KnownProxies.Contains(address))
+        {
+            options.KnownProxies.Add(address);
+        }
+    }
 });
 
 // 基础设施注册
@@ -40,16 +76,37 @@ builder.Services.AddJwtAuthentication(builder.Configuration);
 builder.Services.AddApplicationAuthorization();
 builder.Services.AddCloudStorage(builder.Configuration, builder.Environment);
 builder.Services.AddAIInfrastructure(builder.Configuration, builder.Environment);
+builder.Services.AddAssistantInfrastructure(builder.Configuration);
 
 var app = builder.Build();
+
+if (!app.Environment.IsDevelopment())
+{
+    if (string.Equals(builder.Configuration["AllowedHosts"], "*", StringComparison.Ordinal))
+    {
+        app.Logger.LogWarning(
+            "AllowedHosts is wildcard in Production. Set AllowedHosts to the public domain name.");
+    }
+    if (string.IsNullOrWhiteSpace(dataProtectionKeysPath))
+    {
+        app.Logger.LogWarning(
+            "DataProtection:KeysPath is not configured. Search cursors may become invalid after a restart or server replacement.");
+    }
+}
 
 // 在 HTTPS 跳转、日志和登录限流之前恢复同机可信反向代理传来的客户端 IP/协议。
 app.UseForwardedHeaders();
 
-// 全局异常处理必须尽量靠前，统一返回 ApiResponse 错误结构。
-app.UseMiddleware<InteriorDesignWeb.Middlewares.ExceptionHandlingMiddleware>();
+if (!app.Environment.IsDevelopment())
+{
+    app.UseHsts();
+}
+
+// 请求日志位于异常处理器外层，确保记录的是异常转换后的真实状态码。
 app.UseMiddleware<InteriorDesignWeb.Middlewares.RequestTelemetryMiddleware>();
+app.UseMiddleware<InteriorDesignWeb.Middlewares.ExceptionHandlingMiddleware>();
 app.UseHttpsRedirection();
+app.UseResponseCompression();
 
 // Vite 的唯一生产输出目录是 wwwroot/dist。不要直接暴露整个 wwwroot，
 // 否则 src、配置文件和前端工程文件也会成为可访问的静态资源。
@@ -80,6 +137,12 @@ if (hasFrontendBuild)
 }
 else
 {
+    if (!app.Environment.IsDevelopment()
+        && builder.Configuration.GetValue("Hosting:RequireFrontendBuild", true))
+    {
+        throw new InvalidOperationException(
+            $"Production frontend build is missing: {frontendIndexPath}. Publish the complete application package instead of backend files only.");
+    }
     app.Logger.LogWarning(
         "Frontend build not found at {FrontendIndexPath}. Run npm run build before starting a production deployment.",
         frontendIndexPath);

@@ -23,6 +23,12 @@ public class UserQuota
 
     public DateTime? LastResetAt { get; set; }
 
+    public int AssistantTokenLimit5Hours { get; set; }
+
+    public int AssistantTokensUsed5Hours { get; set; }
+
+    public DateTime? AssistantTokenWindowStartedAt { get; set; }
+
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
     public DateTime? UpdatedAt { get; set; }

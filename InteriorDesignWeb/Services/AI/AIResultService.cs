@@ -54,16 +54,31 @@ public sealed class AIResultService : IAIResultService
             .OrderBy(item => item.CreatedAt)
             .ToListAsync(cancellationToken);
 
-        // 后台轮询与手动查询可能同时触发同步；已有结果时直接返回，避免重复上传 COS。
-        if (existing.Count > 0)
+        var resultItems = existing.Select(ToResultDto).ToList();
+        if (request.AutoAddToProject
+            && userId.HasValue
+            && request.ProjectId.HasValue
+            && request.RoomId.HasValue)
         {
-            return existing.Select(ToResultDto).ToList();
+            foreach (var existingImage in existing.Where(item => !item.IsAddedToProject))
+            {
+                await AttachAssistantResultAsync(
+                    existingImage,
+                    userId.Value,
+                    request.ProjectId.Value,
+                    request.RoomId.Value,
+                    cancellationToken);
+            }
         }
-
-        var resultItems = new List<AIResultImageDto>();
 
         foreach (var output in selectedOutputs)
         {
+            var outputKey = BuildOutputKey(output);
+            if (existing.Any(item => string.Equals(item.OutputKey, outputKey, StringComparison.OrdinalIgnoreCase)))
+            {
+                continue;
+            }
+
             await using var outputStream = await _provider.DownloadOutputAsync(
                 output,
                 cancellationToken);
@@ -108,7 +123,7 @@ public sealed class AIResultService : IAIResultService
                 ModelCode = request.ModelCode ?? workflow.DefaultModelCode,
                 Prompt = request.Prompt,
                 SourceType = output.MediaType,
-                OutputKey = BuildOutputKey(output),
+                OutputKey = outputKey,
                 MetadataJson = JsonSerializer.Serialize(new
                 {
                     provider = _provider.ProviderType,
@@ -128,6 +143,19 @@ public sealed class AIResultService : IAIResultService
 
             await _context.aigenerationjobimages.AddAsync(entity, cancellationToken);
             await _context.SaveChangesAsync(cancellationToken);
+
+            if (request.AutoAddToProject
+                && userId.HasValue
+                && request.ProjectId.HasValue
+                && request.RoomId.HasValue)
+            {
+                await AttachAssistantResultAsync(
+                    entity,
+                    userId.Value,
+                    request.ProjectId.Value,
+                    request.RoomId.Value,
+                    cancellationToken);
+            }
             resultItems.Add(ToResultDto(entity));
         }
 
@@ -137,6 +165,54 @@ public sealed class AIResultService : IAIResultService
         {
             saveLock.Release();
         }
+    }
+
+    private async Task AttachAssistantResultAsync(
+        AiGenerationJobImage image,
+        int userId,
+        int projectId,
+        int roomId,
+        CancellationToken cancellationToken)
+    {
+        var bindingIsValid = await _context.projects.AsNoTracking().AnyAsync(
+                project => project.ProjectID == projectId
+                    && project.UserID == userId
+                    && !project.IsDeleted,
+                cancellationToken)
+            && await _context.projectrooms.AsNoTracking().AnyAsync(
+                room => room.RoomID == roomId && room.ProjectID == projectId,
+                cancellationToken);
+        if (!bindingIsValid)
+        {
+            _logger.LogWarning(
+                "AI结果未自动加入方案，项目或房间绑定已失效. AiImageId={AiImageId}, ProjectId={ProjectId}, RoomId={RoomId}",
+                image.AiImageID,
+                projectId,
+                roomId);
+            return;
+        }
+
+        var exists = await _context.projectimages.AnyAsync(
+            relation => relation.ProjectID == projectId && relation.AiImageID == image.AiImageID,
+            cancellationToken);
+        if (!exists)
+        {
+            await _context.projectimages.AddAsync(new ProjectImage
+            {
+                ProjectID = projectId,
+                RoomID = roomId,
+                AiImageID = image.AiImageID,
+                SourceType = "ai",
+                CreatedByUserID = userId,
+                AddedTime = DateTime.UtcNow
+            }, cancellationToken);
+        }
+
+        image.IsAddedToProject = true;
+        image.RetentionStatus = AiGenerationJobImage.RetentionRetained;
+        image.DetachedAt = null;
+        image.CleanupEligibleAt = null;
+        await _context.SaveChangesAsync(cancellationToken);
     }
 
     private IReadOnlyList<AIProviderOutput> SelectWorkflowOutputs(

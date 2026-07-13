@@ -5,5 +5,8 @@
   "20260711_ai_job_hard_delete_asset_retention.sql",
   "20260711_ai_result_idempotency.sql",
   "20260711_user_refresh_sessions.sql",
-  "20260712_admin_management.sql"
+  "20260712_admin_management.sql",
+  "20260712_gallery_management.sql",
+  "20260712_assistant_phase1.sql",
+  "20260713_usage_quotas.sql"
 ]

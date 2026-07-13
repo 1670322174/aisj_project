@@ -126,7 +126,7 @@ namespace InteriorDesignWeb.Controllers
         public async Task<IActionResult> GetImageInfo(int id)
         {
             var image = await _context.images
-                .Where(i => i.ImageID == id)
+                .Where(i => i.ImageID == id && (!i.IsDeleted || User.IsInRole(nameof(UserRole.Administrator))))
                 .Select(i => new
                 {
                     i.ImageID,
@@ -204,7 +204,7 @@ namespace InteriorDesignWeb.Controllers
                 }
 
                 // 5) 初筛（DB 侧过滤 + LIKE 转义 + 快照上界）
-                var query = _context.images.AsNoTracking().AsQueryable();
+                var query = _context.images.AsNoTracking().Where(image => !image.IsDeleted);
 
                 if (hasCursor && cursor != null)
                 {
@@ -524,6 +524,15 @@ namespace InteriorDesignWeb.Controllers
         {
             try
             {
+                var visibility = await _context.images.AsNoTracking()
+                    .Where(image => image.ImageID == id)
+                    .Select(image => new { image.IsDeleted })
+                    .FirstOrDefaultAsync();
+                if (visibility == null || (visibility.IsDeleted && !User.IsInRole(nameof(UserRole.Administrator))))
+                {
+                    return NotFound(new { Code = "NOT_FOUND", Message = "图片不存在" });
+                }
+
                 // 获取图片流
                 var (stream, contentType) = await _cosService.GetImageStreamAsync(id, type);
 

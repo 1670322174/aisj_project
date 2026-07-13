@@ -119,23 +119,35 @@ namespace InteriorDesignWeb.Controllers
             if (!await ValidateProjectAccess(projectId, userId))
                 return Forbid();
 
-            using var transaction = await _context.Database.BeginTransactionAsync();
             try
             {
-                var room = await _context.projectrooms
-                    .Include(r => r.Children)
-                    .FirstOrDefaultAsync(r => r.RoomID == roomId && r.ProjectID == projectId);
+                var allRooms = await _context.projectrooms
+                    .Where(r => r.ProjectID == projectId)
+                    .ToListAsync();
+                var room = allRooms.FirstOrDefault(r => r.RoomID == roomId);
 
                 if (room == null) return NotFound();
 
-                await DeleteRoomRecursive(room);
-                await transaction.CommitAsync();
+                var roomIds = new HashSet<int> { roomId };
+                var foundChildren = true;
+                while (foundChildren)
+                {
+                    var children = allRooms
+                        .Where(item => item.ParentRoomID.HasValue && roomIds.Contains(item.ParentRoomID.Value))
+                        .Select(item => item.RoomID)
+                        .Where(id => !roomIds.Contains(id))
+                        .ToList();
+                    foundChildren = children.Count > 0;
+                    roomIds.UnionWith(children);
+                }
+
+                _context.projectrooms.RemoveRange(allRooms.Where(item => roomIds.Contains(item.RoomID)));
+                await _context.SaveChangesAsync();
 
                 return NoContent();
             }
             catch (Exception ex)
             {
-                await transaction.RollbackAsync();
                 _logger.LogError(ex, "删除房间失败");
                 return StatusCode(500);
             }
@@ -157,16 +169,6 @@ namespace InteriorDesignWeb.Controllers
                     r.ProjectID == projectId);
 
             return room != null ? Ok(room) : NotFound();
-        }
-
-        private async Task DeleteRoomRecursive(ProjectRoom room)
-        {
-            foreach (var child in room.Children.ToList())
-            {
-                await DeleteRoomRecursive(child);
-            }
-            _context.projectrooms.Remove(room);
-            await _context.SaveChangesAsync();
         }
 
         private List<ProjectRoom> GetChildren(List<ProjectRoom> allRooms, int parentId)

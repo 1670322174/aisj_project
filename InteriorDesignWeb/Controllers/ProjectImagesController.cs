@@ -68,7 +68,7 @@ namespace InteriorDesignWeb.Controllers
             if (imageId > 0)
             {
                 var imageExists = await _context.images
-                    .AnyAsync(image => image.ImageID == imageId);
+                    .AnyAsync(image => image.ImageID == imageId && !image.IsDeleted);
                 if (!imageExists)
                     return BadRequest("图片不存在");
 
@@ -88,6 +88,9 @@ namespace InteriorDesignWeb.Controllers
                         existingRelation.RelationID
                     });
                 }
+
+                if (!await _quotaService.CanAddImage(projectId))
+                    return Conflict("当前方案的图片数量已达到该账号等级上限");
 
                 await _context.projectimages.AddAsync(new ProjectImage
                 {
@@ -134,6 +137,9 @@ namespace InteriorDesignWeb.Controllers
                         existingRelation.RelationID
                     });
                 }
+
+                if (!await _quotaService.CanAddImage(projectId))
+                    return Conflict("当前方案的图片数量已达到该账号等级上限");
 
                 await _context.projectimages.AddAsync(new ProjectImage
                 {

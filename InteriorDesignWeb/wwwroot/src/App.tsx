@@ -7,7 +7,7 @@ import GeneratePage from './pages/app/GeneratePage'
 import ProjectsPage from './pages/ProjectsPage'
 import NewProjectPage from './pages/NewProjectPage'
 import GalleryPage from './pages/GalleryPage'
-import AIAssistantPage from './pages/app/AIAssistantPage'
+import AIAssistantPage from './pages/app/AIAssistantWorkspacePage'
 import RouteErrorPage from './components/RouteErrorPage'
 import AdminPage from './pages/app/AdminPage'
 import { useAppStore } from './store/useAppStore'
@@ -68,6 +68,7 @@ const router = createBrowserRouter([
       { path: 'projects', element: <ProjectsPage /> },
       { path: 'projects/:projectId', element: <ProjectsPage /> },
       { path: 'assistant', element: <AIAssistantPage /> },
+      { path: 'assistant/:conversationId', element: <AIAssistantPage /> },
       { path: 'admin', element: <AdminGuard><AdminPage /></AdminGuard> },
     ],
   },
