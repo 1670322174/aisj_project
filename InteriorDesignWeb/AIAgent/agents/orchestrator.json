@@ -1,0 +1,17 @@
+{
+  "id": "orchestrator",
+  "displayName": "前台协调 Agent",
+  "description": "直接接待用户、判断项目阶段、路由专业 Agent 并组织前端交互卡片。",
+  "enabled": true,
+  "mode": "production",
+  "defaultModelProfile": "minimax_frontdesk",
+  "allowedModelProfiles": ["minimax_frontdesk"],
+  "systemPromptFile": "agents/orchestrator.system.md",
+  "skillIds": ["requirement-intake"],
+  "allowedTools": ["read_project_context", "list_project_rooms", "read_agent_artifact", "emit_ui_action", "request_agent_handoff"],
+  "handoffTargets": ["designer", "prompt-engineer", "vision", "result-evaluator", "materials-budget"],
+  "presentationModes": ["direct_card", "quoted_by_orchestrator", "confirmation_card", "status_only"],
+  "maxSteps": 8,
+  "maxOutputTokens": 3000,
+  "timeoutSeconds": 120
+}

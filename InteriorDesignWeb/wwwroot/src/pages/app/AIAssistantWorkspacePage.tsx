@@ -20,6 +20,7 @@ import {
   Trash2,
   WandSparkles,
 } from "lucide-react";
+import { ApiRequestError } from "@/api/client";
 import {
   assistantApi,
   type AssistantAction,
@@ -62,6 +63,8 @@ const blankDetail = (): AssistantConversationDetail => ({
   },
   messages: [],
   actions: [],
+  agentRuns: [],
+  agentArtifacts: [],
 });
 const makeRequestId = () =>
   globalThis.crypto?.randomUUID?.().replaceAll("-", "") ??
@@ -70,6 +73,19 @@ const isTerminal = (status: string) =>
   ["succeeded", "failed", "cancelled", "timeout"].includes(
     status.toLowerCase(),
   );
+
+function formatAssistantError(reason: unknown, fallback: string) {
+  if (!(reason instanceof Error)) return fallback;
+  if (!(reason instanceof ApiRequestError)) return reason.message || fallback;
+  const lines = [reason.message || fallback];
+  if (reason.stage) lines.push(`失败阶段：${reason.stage}`);
+  if (reason.reason) lines.push(`定位原因：${reason.reason}`);
+  if (reason.hint) lines.push(`处理建议：${reason.hint}`);
+  if (reason.requestId) lines.push(`请求 ID：${reason.requestId}`);
+  if (reason.upstreamRequestId) lines.push(`上游请求 ID：${reason.upstreamRequestId}`);
+  if (reason.retryable) lines.push("该问题可以稍后重试。");
+  return lines.join("\n");
+}
 
 function BriefRow({
   label,
@@ -228,7 +244,7 @@ export default function AIAssistantWorkspacePage() {
         setResults([]);
       }
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "对话加载失败");
+      setError(formatAssistantError(reason, "对话加载失败"));
     } finally {
       setLoading(false);
     }
@@ -283,9 +299,7 @@ export default function AIAssistantWorkspacePage() {
         if (!isTerminal(current.status)) timer = window.setTimeout(poll, 2500);
       } catch (reason) {
         if (active)
-          setError(
-            reason instanceof Error ? reason.message : "任务状态获取失败",
-          );
+          setError(formatAssistantError(reason, "任务状态获取失败"));
       }
     };
     void poll();
@@ -330,7 +344,7 @@ export default function AIAssistantWorkspacePage() {
           ),
         );
       } catch (reason) {
-        setError(reason instanceof Error ? reason.message : "原图加载失败");
+      setError(formatAssistantError(reason, "原图加载失败"));
       }
     }
     setLightboxIndex(index);
@@ -343,7 +357,7 @@ export default function AIAssistantWorkspacePage() {
       await refreshConversations();
       navigate(`/app/assistant/${created.conversation.conversationId}`);
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "创建对话失败");
+      setError(formatAssistantError(reason, "创建对话失败"));
     }
   }
   async function submit(event: FormEvent) {
@@ -364,7 +378,7 @@ export default function AIAssistantWorkspacePage() {
       await assistantApi.sendMessage(id, content, makeRequestId());
       await Promise.all([loadDetail(id), refreshConversations()]);
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "消息发送失败");
+      setError(formatAssistantError(reason, "消息发送失败"));
       setMessage(content);
     } finally {
       setPendingUser("");
@@ -381,7 +395,7 @@ export default function AIAssistantWorkspacePage() {
       );
       await loadDetail(activeId);
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "方案绑定失败");
+      setError(formatAssistantError(reason, "方案绑定失败"));
     }
   }
   async function bindRoom(value: string) {
@@ -394,7 +408,7 @@ export default function AIAssistantWorkspacePage() {
       );
       await loadDetail(activeId);
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "房间绑定失败");
+      setError(formatAssistantError(reason, "房间绑定失败"));
     }
   }
   async function execute(
@@ -415,7 +429,7 @@ export default function AIAssistantWorkspacePage() {
       setJob(await aiApi.getJob(response.jobId));
       await loadDetail(activeId);
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "生成任务提交失败");
+      setError(formatAssistantError(reason, "生成任务提交失败"));
     } finally {
       setExecuting(false);
     }
@@ -600,7 +614,7 @@ export default function AIAssistantWorkspacePage() {
             )}
           </div>
           {error && (
-            <div className="mx-4 mb-2 rounded-xl border border-red-400/20 bg-red-400/8 px-3 py-2 text-xs text-red-300">
+            <div className="mx-4 mb-2 whitespace-pre-line rounded-xl border border-red-400/20 bg-red-400/8 px-3 py-2 text-xs leading-5 text-red-300">
               {error}
             </div>
           )}
@@ -711,6 +725,33 @@ export default function AIAssistantWorkspacePage() {
               </div>
             )}
           </section>
+          {detail.agentRuns.length > 0 && (() => {
+            const run = detail.agentRuns[detail.agentRuns.length - 1];
+            const latestEvent = run.events[run.events.length - 1];
+            const failed = run.status.toLowerCase() === "failed";
+            return (
+              <section className={cn(panel, "p-4", failed && "border-red-400/25")}>
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-sm font-semibold text-[var(--text-primary)]">Agent 运行诊断</p>
+                  <span className={cn("text-[10px] font-medium", failed ? "text-red-300" : "text-[var(--text-tertiary)]")}>{run.status}</span>
+                </div>
+                <div className="mt-3 space-y-1.5 text-[11px] leading-5 text-[var(--text-secondary)]">
+                  <p>Run ID：{run.runId}</p>
+                  <p>当前 Agent：{run.currentAgentId || run.entryAgentId}</p>
+                  <p>当前阶段：{run.currentStage || "-"}</p>
+                  <p>模型调用：{run.modelCallCount} 次 · 转交 {run.handoffCount} 次</p>
+                  {latestEvent && <p>最新事件：{latestEvent.title}</p>}
+                </div>
+                {failed && (
+                  <div className="mt-3 rounded-xl bg-red-400/8 p-3 text-[11px] leading-5 text-red-200">
+                    <p>{run.errorMessage || "Agent 运行失败"}</p>
+                    {run.errorCode && <p className="mt-1 text-red-300/80">错误代码：{run.errorCode}</p>}
+                    <p className="mt-1 text-red-300/80">客户端请求 ID：{run.clientRequestId}</p>
+                  </div>
+                )}
+              </section>
+            );
+          })()}
           {proposedAction && (
             <GenerationCard
               action={proposedAction}

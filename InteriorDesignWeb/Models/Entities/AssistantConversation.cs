@@ -31,4 +31,6 @@ public sealed class AssistantConversation
     public ProjectRoom? Room { get; set; }
     public List<AssistantMessage> Messages { get; set; } = new();
     public List<AssistantGenerationAction> GenerationActions { get; set; } = new();
+    public List<AssistantAgentRun> AgentRuns { get; set; } = [];
+    public List<AssistantAttachment> Attachments { get; set; } = [];
 }

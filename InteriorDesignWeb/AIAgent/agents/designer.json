@@ -1,0 +1,17 @@
+{
+  "id": "designer",
+  "displayName": "室内设计 Agent",
+  "description": "生成项目级设计方向和多房间一致的专业设计方案。",
+  "enabled": true,
+  "mode": "production",
+  "defaultModelProfile": "deepseek_worker",
+  "allowedModelProfiles": ["deepseek_worker", "deepseek_design_pro"],
+  "systemPromptFile": "agents/designer.system.md",
+  "skillIds": ["interior-design-planning"],
+  "allowedTools": ["read_project_context", "read_room_state", "read_visual_artifact", "read_material_catalog", "emit_design_artifact", "request_model_escalation"],
+  "handoffTargets": ["prompt-engineer", "materials-budget"],
+  "presentationModes": ["direct_card", "confirmation_card"],
+  "maxSteps": 10,
+  "maxOutputTokens": 8000,
+  "timeoutSeconds": 240
+}

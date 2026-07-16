@@ -981,6 +981,7 @@ function ResultCard({
   onRegenerate: () => void
   onCopy: () => void
 }) {
+  const authExpiresAt = useAppStore((state) => state.authUser?.expiresAt ?? 0)
   const [preview, setPreview] = useState('')
   const [previewError, setPreviewError] = useState(false)
 
@@ -1000,7 +1001,7 @@ function ResultCard({
     })
 
     return () => { disposed = true }
-  }, [outputType, result.aiImageID, result.jobId])
+  }, [authExpiresAt, outputType, result.aiImageID, result.jobId])
 
   return (
     <article className="rounded-2xl overflow-hidden border border-[var(--border-default)] bg-[var(--bg-card)]">

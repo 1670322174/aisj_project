@@ -4,12 +4,36 @@ public class AppException : Exception
 {
     public string Code { get; }
     public int StatusCode { get; }
+    public string? DiagnosticReason { get; private set; }
+    public string? DiagnosticStage { get; private set; }
+    public string? DiagnosticHint { get; private set; }
+    public string? UpstreamRequestId { get; private set; }
+    public bool Retryable { get; private set; }
 
-    public AppException(string code, string message, int statusCode = StatusCodes.Status400BadRequest)
-        : base(message)
+    public AppException(
+        string code,
+        string message,
+        int statusCode = StatusCodes.Status400BadRequest,
+        Exception? innerException = null)
+        : base(message, innerException)
     {
         Code = code;
         StatusCode = statusCode;
+    }
+
+    public AppException WithDiagnostic(
+        string reason,
+        string stage,
+        string hint,
+        string? upstreamRequestId = null,
+        bool retryable = false)
+    {
+        DiagnosticReason = reason;
+        DiagnosticStage = stage;
+        DiagnosticHint = hint;
+        UpstreamRequestId = upstreamRequestId;
+        Retryable = retryable;
+        return this;
     }
 
     public static AppException NotFound(string message = "资源不存在")

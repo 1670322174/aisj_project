@@ -17,6 +17,11 @@ public sealed class RequestTelemetryMiddleware
 
     public async Task InvokeAsync(HttpContext context)
     {
+        context.Response.OnStarting(() =>
+        {
+            context.Response.Headers["X-Request-ID"] = context.TraceIdentifier;
+            return Task.CompletedTask;
+        });
         var stopwatch = Stopwatch.StartNew();
         try
         {

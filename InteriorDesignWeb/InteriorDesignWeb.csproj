@@ -4,6 +4,12 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <UserSecretsId>InteriorDesignWeb-9b07c3cd-cf4e-4b1a-8d98-2e12b4b84fc4</UserSecretsId>
+    <!-- dotnet publish defaults to Release and production packages do not carry local source paths. -->
+    <PublishRelease>true</PublishRelease>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)' == 'Release'">
+    <DebugType>None</DebugType>
+    <DebugSymbols>false</DebugSymbols>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Devolutions.BCryptPbkdf.Net" Version="2024.8.9" />
@@ -41,6 +47,14 @@
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
     </Content>
+    <Content Update="AIAgent\**\*.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </Content>
+    <Content Include="AIAgent\**\*.md">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </Content>
   </ItemGroup>
 
   <Target Name="BuildFrontendForPublish"
@@ -67,5 +81,7 @@
            Text="Frontend source files must not be included in the production package." />
     <Error Condition="Exists('$(PublishDir)appsettings.Development.json')"
            Text="Development configuration must not be included in the production package." />
+    <Error Condition="Exists('$(PublishDir)InteriorDesignWeb.pdb')"
+           Text="Production package must not include the application PDB because it can expose local source paths." />
   </Target>
 </Project>

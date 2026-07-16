@@ -10,6 +10,7 @@ using InteriorDesignWeb.Services.AI;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using System.Text.Json;
 
 namespace InteriorDesignWeb.Controllers;
 
@@ -22,17 +23,75 @@ public class AIJobsController : ControllerBase
     private readonly IAIGenerationService _generationService;
     private readonly DesignHubContext _context;
     private readonly CosService _cosService;
+    private readonly AIJobProgressBroker _progressBroker;
 
     public AIJobsController(
         IAIJobService aiJobService,
         IAIGenerationService generationService,
         DesignHubContext context,
-        CosService cosService)
+        CosService cosService,
+        AIJobProgressBroker progressBroker)
     {
         _aiJobService = aiJobService;
         _generationService = generationService;
         _context = context;
         _cosService = cosService;
+        _progressBroker = progressBroker;
+    }
+
+    /// <summary>
+    /// 将ComfyUI WebSocket进度以SSE推送给当前浏览器；断线时前端继续使用轮询兜底。
+    /// </summary>
+    [HttpGet("{jobId}/events")]
+    public async Task StreamJobEvents(string jobId, CancellationToken cancellationToken)
+    {
+        var job = await _aiJobService.GetJobAsync(jobId, GetCurrentUserId(), cancellationToken);
+        if (job == null)
+            throw new AppException(
+                ErrorCodes.AiJobNotFound,
+                "AI任务不存在或无权访问。",
+                StatusCodes.Status404NotFound);
+
+        Response.ContentType = "text/event-stream";
+        Response.Headers.CacheControl = "no-cache, no-store";
+        Response.Headers.Append("X-Accel-Buffering", "no");
+        await WriteProgressEventAsync(new AIJobProgressEvent(
+            job.JobId,
+            job.Status,
+            job.ProgressValue,
+            job.ErrorMessage,
+            job.UpdatedAt ?? DateTime.UtcNow), cancellationToken);
+
+        using var subscription = _progressBroker.Subscribe(jobId);
+        while (!cancellationToken.IsCancellationRequested)
+        {
+            using var iteration = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            var waiting = subscription.Reader.WaitToReadAsync(iteration.Token).AsTask();
+            var heartbeat = Task.Delay(TimeSpan.FromSeconds(15), iteration.Token);
+            var completed = await Task.WhenAny(waiting, heartbeat);
+            iteration.Cancel();
+
+            if (completed == heartbeat)
+            {
+                await Response.WriteAsync(": keepalive\n\n", cancellationToken);
+                await Response.Body.FlushAsync(cancellationToken);
+                continue;
+            }
+
+            bool available;
+            try { available = await waiting; }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { break; }
+            if (!available) break;
+            while (subscription.Reader.TryRead(out var update))
+                await WriteProgressEventAsync(update, cancellationToken);
+        }
+    }
+
+    private async Task WriteProgressEventAsync(AIJobProgressEvent update, CancellationToken cancellationToken)
+    {
+        var json = JsonSerializer.Serialize(update, new JsonSerializerOptions(JsonSerializerDefaults.Web));
+        await Response.WriteAsync($"event: progress\ndata: {json}\n\n", cancellationToken);
+        await Response.Body.FlushAsync(cancellationToken);
     }
 
     /// <summary>
@@ -65,7 +124,6 @@ public class AIJobsController : ControllerBase
         CancellationToken cancellationToken)
     {
         var userId = GetCurrentUserId();
-        await _generationService.RefreshAsync(jobId, userId, cancellationToken);
 
         var job = await _aiJobService.GetJobAsync(
             jobId,
@@ -95,7 +153,6 @@ public class AIJobsController : ControllerBase
         CancellationToken cancellationToken)
     {
         var userId = GetCurrentUserId();
-        await _generationService.RefreshAsync(jobId, userId, cancellationToken);
 
         var results = await _aiJobService.GetJobResultsAsync(
             jobId,

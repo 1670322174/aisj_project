@@ -1,0 +1,29 @@
+{
+  "version": "1.0.0",
+  "tools": [
+    { "id": "read_project_context", "risk": "read", "confirmation": "none", "implemented": false },
+    { "id": "list_project_rooms", "risk": "read", "confirmation": "none", "implemented": false },
+    { "id": "read_room_state", "risk": "read", "confirmation": "none", "implemented": false },
+    { "id": "read_agent_artifact", "risk": "read", "confirmation": "none", "implemented": false },
+    { "id": "read_visual_artifact", "risk": "read", "confirmation": "none", "implemented": false },
+    { "id": "read_design_artifact", "risk": "read", "confirmation": "none", "implemented": false },
+    { "id": "read_signed_attachment", "risk": "read_sensitive", "confirmation": "none", "implemented": false },
+    { "id": "read_generation_result", "risk": "read", "confirmation": "none", "implemented": false },
+    { "id": "read_material_catalog", "risk": "read", "confirmation": "none", "implemented": false },
+    { "id": "get_workflow_capabilities", "risk": "read", "confirmation": "none", "implemented": false },
+    { "id": "emit_ui_action", "risk": "presentation", "confirmation": "none", "implemented": true },
+    { "id": "request_agent_handoff", "risk": "internal", "confirmation": "none", "implemented": true },
+    { "id": "request_model_escalation", "risk": "cost", "confirmation": "policy", "implemented": true },
+    { "id": "emit_design_artifact", "risk": "draft_write", "confirmation": "none", "implemented": true },
+    { "id": "emit_visual_artifact", "risk": "draft_write", "confirmation": "none", "implemented": true },
+    { "id": "emit_generation_proposal", "risk": "paid_action_proposal", "confirmation": "required_before_execute", "implemented": true },
+    { "id": "emit_result_visual_analysis", "risk": "draft_write", "confirmation": "none", "implemented": true },
+    { "id": "emit_result_evaluation", "risk": "draft_write", "confirmation": "none", "implemented": true },
+    { "id": "calculate_material_budget", "risk": "calculation", "confirmation": "none", "implemented": false },
+    { "id": "emit_budget_report", "risk": "test_output", "confirmation": "none", "implemented": false },
+    { "id": "read_agent_metrics", "risk": "aggregated_read", "confirmation": "none", "implemented": false },
+    { "id": "read_anonymized_feedback", "risk": "aggregated_read", "confirmation": "none", "implemented": false },
+    { "id": "read_eval_results", "risk": "read", "confirmation": "none", "implemented": false },
+    { "id": "emit_insight_report", "risk": "admin_draft", "confirmation": "admin_publish", "implemented": false }
+  ]
+}

@@ -14,6 +14,7 @@ using InteriorDesignWeb.Providers.AI;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
+using InteriorDesignWeb.Services.Assistant;
 
 namespace InteriorDesignWeb.Services.AI;
 
@@ -25,6 +26,7 @@ public sealed class AIGenerationService : IAIGenerationService
     private readonly DesignHubContext _context;
     private readonly IAIResultService _resultService;
     private readonly IUsageQuotaService _usageQuotaService;
+    private readonly IAssistantGovernanceService _governanceService;
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly ComfyUIServerOptions _serverOptions;
     private readonly ILogger<AIGenerationService> _logger;
@@ -42,6 +44,7 @@ public sealed class AIGenerationService : IAIGenerationService
         DesignHubContext context,
         IAIResultService resultService,
         IUsageQuotaService usageQuotaService,
+        IAssistantGovernanceService governanceService,
         IServiceScopeFactory scopeFactory,
         IOptions<ComfyUIServerOptions> serverOptions,
         ILogger<AIGenerationService> logger)
@@ -52,6 +55,7 @@ public sealed class AIGenerationService : IAIGenerationService
         _context = context;
         _resultService = resultService;
         _usageQuotaService = usageQuotaService;
+        _governanceService = governanceService;
         _scopeFactory = scopeFactory;
         _serverOptions = serverOptions.Value;
         _logger = logger;
@@ -111,6 +115,12 @@ public sealed class AIGenerationService : IAIGenerationService
         string? idempotencyKey = null)
     {
         var workflow = _workflowRegistry.GetRequired(request.WorkflowCode);
+        var effectivePolicy = await _governanceService.GetEffectivePolicyAsync(userId, cancellationToken);
+        if (!effectivePolicy.CanExecuteGeneration)
+            throw AppException.Forbidden("管理员已禁止当前账号执行 AI 生图。");
+        if (effectivePolicy.AllowedWorkflowCodes.Count > 0
+            && !effectivePolicy.AllowedWorkflowCodes.Contains(workflow.WorkflowCode))
+            throw AppException.Forbidden("当前账号没有使用该 AI 工作流的权限。");
         await ValidateProjectBindingAsync(request, userId, cancellationToken);
         request.ModelCode ??= workflow.DefaultModelCode;
 
@@ -145,17 +155,21 @@ public sealed class AIGenerationService : IAIGenerationService
                 ProgressValue = existingJob.ProgressValue
             };
         }
-        var inputJson = JsonSerializer.Serialize(request, JsonOptions);
 
-        await _usageQuotaService.ReserveGenerationAsync(
-            userId,
-            jobId,
-            workflow.CostUnits,
-            workflow.WorkflowCode,
-            request.ModelCode,
-            _provider.ProviderType,
-            inputJson,
-            cancellationToken);
+        var activeStatuses = new[]
+        {
+            AIJobStatus.Created,
+            AIJobStatus.Queued,
+            AIJobStatus.Running,
+            AIJobStatus.Uploading
+        };
+        var activeJobCount = await _context.aigenerationjobs.AsNoTracking()
+            .CountAsync(item => item.UserID == userId
+                && !item.IsDeleted
+                && activeStatuses.Contains(item.Status), cancellationToken);
+        if (activeJobCount >= effectivePolicy.MaxConcurrentJobs)
+            throw AppException.QuotaExceeded($"当前账号最多同时运行 {effectivePolicy.MaxConcurrentJobs} 个 AI 任务，请等待已有任务结束。");
+        var inputJson = JsonSerializer.Serialize(request, JsonOptions);
 
         var job = new AiGenerationJob
         {
@@ -179,16 +193,37 @@ public sealed class AIGenerationService : IAIGenerationService
         };
 
         var providerAccepted = false;
-        try
+        var executionStrategy = _context.Database.CreateExecutionStrategy();
+        await executionStrategy.ExecuteAsync(async () =>
         {
-            await _context.aigenerationjobs.AddAsync(job, cancellationToken);
-            await _context.SaveChangesAsync(cancellationToken);
-        }
-        catch
-        {
-            await _usageQuotaService.RefundGenerationAsync(userId, jobId, cancellationToken);
-            throw;
-        }
+            // A retry starts a new database transaction. Clear entities left over from a
+            // rolled-back attempt so the job and usage record are inserted again exactly once.
+            _context.ChangeTracker.Clear();
+            await using var transaction = await _context.Database.BeginTransactionAsync(cancellationToken);
+            try
+            {
+                // UsageRecord.JobId has a foreign key to AiGenerationJob.JobId, so the job
+                // must exist before reserving quota. Keep both writes in one transaction so
+                // a quota failure cannot leave an orphaned job behind.
+                await _context.aigenerationjobs.AddAsync(job, cancellationToken);
+                await _context.SaveChangesAsync(cancellationToken);
+                await _usageQuotaService.ReserveGenerationAsync(
+                    userId,
+                    jobId,
+                    workflow.CostUnits,
+                    workflow.WorkflowCode,
+                    request.ModelCode,
+                    _provider.ProviderType,
+                    inputJson,
+                    cancellationToken);
+                await transaction.CommitAsync(cancellationToken);
+            }
+            catch
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                throw;
+            }
+        });
 
         try
         {

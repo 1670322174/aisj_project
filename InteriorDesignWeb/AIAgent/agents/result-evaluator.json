@@ -1,0 +1,17 @@
+{
+  "id": "result-evaluator",
+  "displayName": "效果评估 Agent",
+  "description": "对比生成图片、设计方案和用户要求，提出下一轮修改路径。",
+  "enabled": true,
+  "mode": "production",
+  "defaultModelProfile": "deepseek_worker",
+  "allowedModelProfiles": ["deepseek_worker", "deepseek_design_pro"],
+  "systemPromptFile": "agents/result-evaluator.system.md",
+  "skillIds": ["result-evaluation"],
+  "allowedTools": ["read_design_artifact", "read_visual_artifact", "read_generation_result", "emit_result_evaluation"],
+  "handoffTargets": ["prompt-engineer", "designer"],
+  "presentationModes": ["direct_card", "internal"],
+  "maxSteps": 6,
+  "maxOutputTokens": 5000,
+  "timeoutSeconds": 180
+}

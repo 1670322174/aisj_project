@@ -1,0 +1,17 @@
+{
+  "id": "materials-budget",
+  "displayName": "材料与预算 Agent",
+  "description": "基于材料目录和确定性计算工具生成测试版材料及预算建议。",
+  "enabled": true,
+  "mode": "test",
+  "defaultModelProfile": "deepseek_worker",
+  "allowedModelProfiles": ["deepseek_worker", "deepseek_design_pro"],
+  "systemPromptFile": "agents/materials-budget.system.md",
+  "skillIds": ["material-budget"],
+  "allowedTools": ["read_project_context", "read_design_artifact", "read_material_catalog", "calculate_material_budget", "emit_budget_report"],
+  "handoffTargets": [],
+  "presentationModes": ["direct_card"],
+  "maxSteps": 8,
+  "maxOutputTokens": 6000,
+  "timeoutSeconds": 180
+}

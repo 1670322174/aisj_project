@@ -106,7 +106,12 @@ if (!app.Environment.IsDevelopment())
 app.UseMiddleware<InteriorDesignWeb.Middlewares.RequestTelemetryMiddleware>();
 app.UseMiddleware<InteriorDesignWeb.Middlewares.ExceptionHandlingMiddleware>();
 app.UseHttpsRedirection();
-app.UseResponseCompression();
+if (!app.Environment.IsDevelopment())
+{
+    // BrowserLink / dotnet watch need to inject their development scripts into HTML.
+    // Brotli-compressed responses prevent that injection and only create noisy warnings locally.
+    app.UseResponseCompression();
+}
 
 // Vite 的唯一生产输出目录是 wwwroot/dist。不要直接暴露整个 wwwroot，
 // 否则 src、配置文件和前端工程文件也会成为可访问的静态资源。

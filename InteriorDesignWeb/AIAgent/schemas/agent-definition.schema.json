@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": [
+    "id",
+    "displayName",
+    "enabled",
+    "mode",
+    "defaultModelProfile",
+    "allowedModelProfiles",
+    "systemPromptFile",
+    "skillIds",
+    "allowedTools",
+    "handoffTargets",
+    "maxSteps",
+    "maxOutputTokens",
+    "timeoutSeconds"
+  ],
+  "properties": {
+    "id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]{1,63}$" },
+    "displayName": { "type": "string", "minLength": 1, "maxLength": 100 },
+    "enabled": { "type": "boolean" },
+    "mode": { "enum": ["disabled", "test", "production"] },
+    "maxSteps": { "type": "integer", "minimum": 1, "maximum": 30 },
+    "maxOutputTokens": { "type": "integer", "minimum": 64, "maximum": 128000 },
+    "timeoutSeconds": { "type": "integer", "minimum": 15, "maximum": 600 }
+  }
+}

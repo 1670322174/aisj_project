@@ -1,0 +1,17 @@
+{
+  "id": "prompt-engineer",
+  "displayName": "提示词与工作流 Agent",
+  "description": "根据设计成果和实际工作流能力生成可执行提示词与工作流建议。",
+  "enabled": true,
+  "mode": "production",
+  "defaultModelProfile": "deepseek_worker",
+  "allowedModelProfiles": ["deepseek_worker"],
+  "systemPromptFile": "agents/prompt-engineer.system.md",
+  "skillIds": ["workflow-prompt-generation"],
+  "allowedTools": ["read_design_artifact", "read_visual_artifact", "get_workflow_capabilities", "emit_generation_proposal"],
+  "handoffTargets": [],
+  "presentationModes": ["confirmation_card", "status_only"],
+  "maxSteps": 6,
+  "maxOutputTokens": 5000,
+  "timeoutSeconds": 180
+}

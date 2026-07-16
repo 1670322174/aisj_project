@@ -1,0 +1,17 @@
+{
+  "id": "iteration-analyst",
+  "displayName": "Agent 迭代分析",
+  "description": "离线分析匿名化使用指标和反馈，生成可审核改进建议。",
+  "enabled": true,
+  "mode": "test",
+  "defaultModelProfile": "deepseek_worker",
+  "allowedModelProfiles": ["deepseek_worker", "deepseek_design_pro"],
+  "systemPromptFile": "agents/iteration-analyst.system.md",
+  "skillIds": ["usage-insight"],
+  "allowedTools": ["read_agent_metrics", "read_anonymized_feedback", "read_eval_results", "emit_insight_report"],
+  "handoffTargets": [],
+  "presentationModes": ["internal"],
+  "maxSteps": 8,
+  "maxOutputTokens": 8000,
+  "timeoutSeconds": 300
+}

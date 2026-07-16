@@ -21,12 +21,15 @@ public sealed class AIJobBackgroundWorker : BackgroundService
 
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly ILogger<AIJobBackgroundWorker> _logger;
+    private readonly AIJobRefreshCoordinator _refreshCoordinator;
 
     public AIJobBackgroundWorker(
         IServiceScopeFactory scopeFactory,
+        AIJobRefreshCoordinator refreshCoordinator,
         ILogger<AIJobBackgroundWorker> logger)
     {
         _scopeFactory = scopeFactory;
+        _refreshCoordinator = refreshCoordinator;
         _logger = logger;
     }
 
@@ -75,9 +78,9 @@ public sealed class AIJobBackgroundWorker : BackgroundService
                 using var jobScope = _scopeFactory.CreateScope();
                 var generationService = jobScope.ServiceProvider
                     .GetRequiredService<IAIGenerationService>();
-                await generationService.RefreshAsync(
+                await _refreshCoordinator.RunAsync(
                     job.JobId,
-                    job.UserId,
+                    () => generationService.RefreshAsync(job.JobId, job.UserId, cancellationToken),
                     cancellationToken);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)

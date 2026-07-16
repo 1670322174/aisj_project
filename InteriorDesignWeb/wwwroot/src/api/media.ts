@@ -6,6 +6,17 @@ const BASE_URL = (import.meta as unknown as { env: Record<string, string> }).env
 const MAX_CACHE_SIZE = 100
 const blobCache = new Map<string, string>()
 
+export class AuthenticatedMediaError extends Error {
+  constructor(
+    message: string,
+    public readonly status: number,
+    public readonly endpoint: string,
+  ) {
+    super(message)
+    this.name = 'AuthenticatedMediaError'
+  }
+}
+
 function remember(key: string, url: string): void {
   const previous = blobCache.get(key)
   if (previous && previous !== url) URL.revokeObjectURL(previous)
@@ -31,21 +42,33 @@ export async function fetchAuthenticatedMedia(
     return cached
   }
 
-  let response = await fetch(`${BASE_URL}${endpoint}`, {
+  const requestUrl = `${BASE_URL}${endpoint}`
+  const requestOptions: RequestInit = {
     credentials: 'include',
-  })
+    cache: 'no-store',
+    headers: { Accept: 'image/*,video/*,application/octet-stream' },
+  }
+  let response = await fetch(requestUrl, requestOptions)
 
   if (response.status === 401 && await refreshAuthSession()) {
-    response = await fetch(`${BASE_URL}${endpoint}`, { credentials: 'include' })
+    response = await fetch(requestUrl, requestOptions)
   }
 
   if (response.status === 401) {
     window.dispatchEvent(new Event('auth:unauthorized'))
-    throw new Error('登录已过期，请重新登录')
+    throw new AuthenticatedMediaError(
+      `图片请求未通过登录验证（HTTP 401）：${endpoint}`,
+      401,
+      endpoint,
+    )
   }
 
   if (!response.ok) {
-    throw new Error(`媒体加载失败：HTTP ${response.status}`)
+    throw new AuthenticatedMediaError(
+      `媒体加载失败（HTTP ${response.status}）：${endpoint}`,
+      response.status,
+      endpoint,
+    )
   }
 
   const blobUrl = URL.createObjectURL(await response.blob())

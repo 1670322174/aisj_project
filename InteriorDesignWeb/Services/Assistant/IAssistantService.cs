@@ -10,5 +10,7 @@ public interface IAssistantService
     Task<AssistantConversationSummaryDto> UpdateBindingAsync(int userId, long conversationId, UpdateAssistantBindingRequest request, CancellationToken cancellationToken);
     Task<AssistantChatResponseDto> SendMessageAsync(int userId, long conversationId, SendAssistantMessageRequest request, CancellationToken cancellationToken);
     Task<AssistantGenerationResponseDto> ExecuteGenerationAsync(int userId, long conversationId, long actionId, ExecuteAssistantGenerationRequest request, CancellationToken cancellationToken);
+    Task<AssistantResultEvaluationDto> EvaluateGenerationAsync(int userId, long conversationId, long actionId, EvaluateAssistantResultRequest request, CancellationToken cancellationToken);
+    Task<AssistantAgentRunDto> GetAgentRunAsync(int userId, long conversationId, string clientRequestId, CancellationToken cancellationToken);
     Task DeleteConversationAsync(int userId, long conversationId, CancellationToken cancellationToken);
 }

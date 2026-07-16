@@ -9,6 +9,36 @@ const DEFAULT_HEADERS: Record<string, string> = {
 
 let refreshPromise: Promise<boolean> | null = null
 
+export class ApiRequestError extends Error {
+  readonly status: number
+  readonly code: string
+  readonly requestId: string
+  readonly reason: string
+  readonly stage: string
+  readonly hint: string
+  readonly upstreamRequestId: string
+  readonly retryable: boolean
+
+  constructor(
+    message: string,
+    status: number,
+    code = '',
+    requestId = '',
+    diagnostic: { reason?: string; stage?: string; hint?: string; upstreamRequestId?: string; retryable?: boolean } = {},
+  ) {
+    super(message)
+    this.name = 'ApiRequestError'
+    this.status = status
+    this.code = code
+    this.requestId = requestId
+    this.reason = diagnostic.reason ?? ''
+    this.stage = diagnostic.stage ?? ''
+    this.hint = diagnostic.hint ?? ''
+    this.upstreamRequestId = diagnostic.upstreamRequestId ?? ''
+    this.retryable = diagnostic.retryable ?? false
+  }
+}
+
 async function tryRefresh(): Promise<boolean> {
   const response = await fetch(`${BASE_URL}/User/refresh`, {
     method: 'POST',
@@ -37,6 +67,7 @@ export function refreshAuthSession(): Promise<boolean> {
 }
 
 function normalizeRequestError(error: unknown): Error {
+  if (error instanceof ApiRequestError) return error
   if (error instanceof TypeError) {
     return new Error('无法连接到服务端，请稍后重试')
   }
@@ -89,9 +120,24 @@ async function handleResponse(response: Response): Promise<unknown> {
 
   // 非 2xx 抛出错误
   if (!response.ok) {
-    const message =
-      (data as Record<string, unknown>)?.message as string | undefined
-    throw new Error(message || `HTTP ${response.status}`)
+    const body = data as Record<string, unknown>
+    const error = body?.error && typeof body.error === 'object'
+      ? body.error as Record<string, unknown>
+      : {}
+    const message = body?.message as string | undefined
+    throw new ApiRequestError(
+      message || `HTTP ${response.status}`,
+      response.status,
+      String(body?.code ?? ''),
+      String(body?.requestId ?? body?.RequestId ?? ''),
+      {
+        reason: String(error.reason ?? error.Reason ?? ''),
+        stage: String(error.stage ?? error.Stage ?? ''),
+        hint: String(error.hint ?? error.Hint ?? ''),
+        upstreamRequestId: String(error.upstreamRequestId ?? error.UpstreamRequestId ?? ''),
+        retryable: Boolean(error.retryable ?? error.Retryable ?? false),
+      },
+    )
   }
 
   return data
@@ -147,7 +193,12 @@ export async function requestWithAuth(
 
     if (response.status === 401) {
       window.dispatchEvent(new Event('auth:unauthorized'))
-      throw new Error('登录已过期，请重新登录')
+      try {
+        return await handleResponse(response)
+      } catch (error) {
+        if (error instanceof ApiRequestError) throw error
+        throw new ApiRequestError('登录已过期，请重新登录', 401, 'UNAUTHORIZED')
+      }
     }
 
     return await handleResponse(response)

@@ -125,6 +125,19 @@ public static class AuthenticationServiceExtensions
                         );
 
                         return Task.CompletedTask;
+                    },
+                    OnChallenge = context =>
+                    {
+                        var logger = context.HttpContext.RequestServices
+                            .GetRequiredService<ILoggerFactory>()
+                            .CreateLogger("JwtAuthentication");
+                        logger.LogInformation(
+                            "JWT认证挑战. Path={Path}, HasAccessCookie={HasAccessCookie}, HasRefreshCookie={HasRefreshCookie}, Error={Error}",
+                            context.Request.Path,
+                            context.Request.Cookies.ContainsKey("designhub_access"),
+                            context.Request.Cookies.ContainsKey("designhub_refresh"),
+                            context.Error ?? "none");
+                        return Task.CompletedTask;
                     }
                 };
             });

@@ -1,5 +1,6 @@
 using InteriorDesignWeb.Config;
 using InteriorDesignWeb.Services.Assistant;
+using InteriorDesignWeb.Services.Assistant.Models;
 
 namespace InteriorDesignWeb.Extensions;
 
@@ -11,6 +12,11 @@ public static class AssistantServiceExtensions
     {
         var section = configuration.GetSection(AssistantOptions.SectionName);
         services.Configure<AssistantOptions>(section);
+        services.Configure<AgentModelsOptions>(
+            configuration.GetSection(AgentModelsOptions.SectionName));
+        services.Configure<AgentPlatformOptions>(
+            configuration.GetSection(AgentPlatformOptions.SectionName));
+        services.AddHttpContextAccessor();
         services.AddHttpClient<IAssistantModelClient, OpenAICompatibleAssistantModelClient>(client =>
         {
             if (Uri.TryCreate(section["BaseUrl"], UriKind.Absolute, out var baseUri))
@@ -23,7 +29,16 @@ public static class AssistantServiceExtensions
                     ? Math.Clamp(seconds, 15, 180)
                     : 90);
         });
+        services.AddSingleton<IAgentModelProviderClient, MiniMaxAnthropicAgentModelClient>();
+        services.AddSingleton<IAgentModelProviderClient, DeepSeekAgentModelClient>();
+        services.AddSingleton<IAgentModelProviderClient, VolcArkResponsesAgentModelClient>();
+        services.AddSingleton<IAgentModelRouter, AgentModelRouter>();
+        services.AddSingleton<IAgentConfigurationCatalog, AgentConfigurationCatalog>();
+        services.AddHostedService<AgentConfigurationStartupValidator>();
+        services.AddScoped<IAgentRuntimeService, AgentRuntimeService>();
         services.AddScoped<IAssistantService, AssistantService>();
+        services.AddScoped<IAssistantAttachmentService, AssistantAttachmentService>();
+        services.AddScoped<IAssistantGovernanceService, AssistantGovernanceService>();
         return services;
     }
 }

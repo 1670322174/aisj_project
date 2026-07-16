@@ -191,6 +191,179 @@ export interface AdminGalleryQuery {
   referenced?: boolean
 }
 
+export interface AdminAssistantProviderStatus {
+  enabled: boolean
+  configured: boolean
+  baseUrl: string
+  model: string
+  apiKeyConfigured: boolean
+  timeoutSeconds: number
+  maxContextMessages: number
+  maxOutputTokens: number
+  useJsonResponseFormat: boolean
+  responseFormatMode: string
+  repairInvalidStructuredOutput: boolean
+  allowNaturalLanguageFallback: boolean
+}
+
+export interface AdminAgentModelProfileStatus {
+  profileId: string
+  enabled: boolean
+  configured: boolean
+  provider: string
+  protocol: string
+  baseUrl: string
+  model: string
+  apiKeyConfigured: boolean
+  timeoutSeconds: number
+  maxOutputTokens: number
+  thinkingMode: string
+  reasoningEffort: string
+  validationErrors: string[]
+}
+
+export interface AdminAgentDefinitionStatus {
+  id: string
+  displayName: string
+  description: string
+  enabled: boolean
+  mode: string
+  defaultModelProfile: string
+  allowedModelProfiles: string[]
+  skillIds: string[]
+  allowedTools: string[]
+  handoffTargets: string[]
+}
+
+export interface AdminAgentPlatformStatus {
+  enabled: boolean
+  configurationRoot: string
+  strictValidation: boolean
+  loadedAt: string
+  version: string
+  defaultAgentId: string
+  maxHandoffDepth: number
+  maxAgentsPerRun: number
+  valid: boolean
+  agentCount: number
+  toolCount: number
+  validationErrors: string[]
+  agents: AdminAgentDefinitionStatus[]
+}
+
+export interface AdminAssistantPolicyVersion {
+  policyVersionId: string
+  versionNumber: number
+  name: string
+  businessPrompt: string
+  isPublished: boolean
+  createdAt: string
+  publishedAt: string
+}
+
+export interface AdminAiRolePolicy {
+  rolePolicyId: string
+  role: AdminRole
+  assistantEnabled: boolean
+  canProposeGeneration: boolean
+  canExecuteGeneration: boolean
+  canAutoAddToProject: boolean
+  maxConcurrentJobs: number
+  allowedWorkflowCodes: string[]
+}
+
+export interface AdminAiUserOverride {
+  userPolicyOverrideId: string
+  userId: string
+  username: string
+  assistantEnabled: boolean | null
+  canProposeGeneration: boolean | null
+  canExecuteGeneration: boolean | null
+  canAutoAddToProject: boolean | null
+  maxConcurrentJobs: number | null
+  allowedWorkflowCodes: string[] | null
+  expiresAt: string
+  updatedAt: string
+}
+
+export interface AdminAiWorkflowOption {
+  workflowCode: string
+  name: string
+  outputType: string
+  costUnits: number
+}
+
+export interface AdminAgentRunSummary {
+  runId: number
+  conversationId: number
+  conversationTitle: string
+  userId: number
+  username: string
+  clientRequestId: string
+  status: string
+  entryAgentId: string
+  currentAgentId: string
+  currentStage: string
+  modelCallCount: number
+  handoffCount: number
+  inputTokens: number
+  outputTokens: number
+  durationMs: number
+  errorCode: string
+  errorMessage: string
+  startedAt: string
+  completedAt: string
+  latestEvent: string
+}
+
+export interface AdminAgentRunDetail extends AdminAgentRunSummary {
+  events: Array<{
+    eventId: number
+    sequence: number
+    agentId: string
+    eventType: string
+    stage: string
+    title: string
+    detail: string
+    dataJson: string
+    createdAt: string
+  }>
+  artifacts: Array<{
+    artifactId: number
+    agentId: string
+    artifactType: string
+    version: number
+    status: string
+    title: string
+    createdAt: string
+    contentLength: number
+  }>
+}
+
+export interface AdminAiGovernance {
+  provider: AdminAssistantProviderStatus
+  agentPlatform: AdminAgentPlatformStatus
+  agentModels: AdminAgentModelProfileStatus[]
+  recentAgentRuns: AdminAgentRunSummary[]
+  corePolicy: { version: string; editable: boolean; summary: string }
+  policyVersions: AdminAssistantPolicyVersion[]
+  rolePolicies: AdminAiRolePolicy[]
+  userOverrides: AdminAiUserOverride[]
+  workflows: AdminAiWorkflowOption[]
+}
+
+export type AdminAiPermissionValue = boolean | null
+
+export interface UpdateAdminAiUserOverrideInput {
+  assistantEnabled: AdminAiPermissionValue
+  canProposeGeneration: AdminAiPermissionValue
+  canExecuteGeneration: AdminAiPermissionValue
+  canAutoAddToProject: AdminAiPermissionValue
+  maxConcurrentJobs: number | null
+  allowedWorkflowCodes: string[] | null
+  expiresAt: string | null
+}
+
 export interface UpdateGalleryImageInput {
   fileName: string
   roomType: string
@@ -644,6 +817,264 @@ async function restoreGalleryImage(imageId: string): Promise<void> {
   await requestWithAuth(`/Admin/gallery/images/${encodeURIComponent(imageId)}/restore`, { method: 'POST' })
 }
 
+function nullableBooleanValue(source: RawObject, keys: string[]): boolean | null {
+  const value = pick<unknown>(source, keys, null)
+  if (value === null || value === undefined || value === '') return null
+  return typeof value === 'string' ? value.toLowerCase() === 'true' : Boolean(value)
+}
+
+async function getAiGovernance(): Promise<AdminAiGovernance> {
+  const data = unwrap(await requestWithAuth('/Admin/ai-governance'))
+  const provider = record(pick(data, ['provider', 'Provider'], {}))
+  const agentPlatform = record(pick(data, ['agentPlatform', 'AgentPlatform'], {}))
+  const core = record(pick(data, ['corePolicy', 'CorePolicy'], {}))
+  return {
+    provider: {
+      enabled: booleanValue(provider, ['enabled', 'Enabled']),
+      configured: booleanValue(provider, ['configured', 'Configured']),
+      baseUrl: textValue(provider, ['baseUrl', 'BaseUrl']),
+      model: textValue(provider, ['model', 'Model']),
+      apiKeyConfigured: booleanValue(provider, ['apiKeyConfigured', 'ApiKeyConfigured']),
+      timeoutSeconds: numberValue(provider, ['timeoutSeconds', 'TimeoutSeconds']),
+      maxContextMessages: numberValue(provider, ['maxContextMessages', 'MaxContextMessages']),
+      maxOutputTokens: numberValue(provider, ['maxOutputTokens', 'MaxOutputTokens']),
+      useJsonResponseFormat: booleanValue(provider, ['useJsonResponseFormat', 'UseJsonResponseFormat']),
+      responseFormatMode: textValue(provider, ['responseFormatMode', 'ResponseFormatMode'], 'auto'),
+      repairInvalidStructuredOutput: booleanValue(provider, ['repairInvalidStructuredOutput', 'RepairInvalidStructuredOutput'], true),
+      allowNaturalLanguageFallback: booleanValue(provider, ['allowNaturalLanguageFallback', 'AllowNaturalLanguageFallback'], true),
+    },
+    agentPlatform: {
+      enabled: booleanValue(agentPlatform, ['enabled', 'Enabled']),
+      configurationRoot: textValue(agentPlatform, ['configurationRoot', 'ConfigurationRoot']),
+      strictValidation: booleanValue(agentPlatform, ['strictValidation', 'StrictValidation'], true),
+      loadedAt: textValue(agentPlatform, ['loadedAt', 'LoadedAt']),
+      version: textValue(agentPlatform, ['version', 'Version']),
+      defaultAgentId: textValue(agentPlatform, ['defaultAgentId', 'DefaultAgentId']),
+      maxHandoffDepth: numberValue(agentPlatform, ['maxHandoffDepth', 'MaxHandoffDepth']),
+      maxAgentsPerRun: numberValue(agentPlatform, ['maxAgentsPerRun', 'MaxAgentsPerRun']),
+      valid: booleanValue(agentPlatform, ['valid', 'Valid']),
+      agentCount: numberValue(agentPlatform, ['agentCount', 'AgentCount']),
+      toolCount: numberValue(agentPlatform, ['toolCount', 'ToolCount']),
+      validationErrors: arrayValue(agentPlatform, ['validationErrors', 'ValidationErrors']).map(String),
+      agents: arrayValue(agentPlatform, ['agents', 'Agents']).map((value) => {
+        const raw = record(value)
+        return {
+          id: textValue(raw, ['id', 'Id']),
+          displayName: textValue(raw, ['displayName', 'DisplayName']),
+          description: textValue(raw, ['description', 'Description']),
+          enabled: booleanValue(raw, ['enabled', 'Enabled']),
+          mode: textValue(raw, ['mode', 'Mode']),
+          defaultModelProfile: textValue(raw, ['defaultModelProfile', 'DefaultModelProfile']),
+          allowedModelProfiles: arrayValue(raw, ['allowedModelProfiles', 'AllowedModelProfiles']).map(String),
+          skillIds: arrayValue(raw, ['skillIds', 'SkillIds']).map(String),
+          allowedTools: arrayValue(raw, ['allowedTools', 'AllowedTools']).map(String),
+          handoffTargets: arrayValue(raw, ['handoffTargets', 'HandoffTargets']).map(String),
+        }
+      }),
+    },
+    agentModels: arrayValue(data, ['agentModels', 'AgentModels']).map((value) => {
+      const raw = record(value)
+      return {
+        profileId: textValue(raw, ['profileId', 'ProfileId']),
+        enabled: booleanValue(raw, ['enabled', 'Enabled']),
+        configured: booleanValue(raw, ['configured', 'Configured']),
+        provider: textValue(raw, ['provider', 'Provider']),
+        protocol: textValue(raw, ['protocol', 'Protocol']),
+        baseUrl: textValue(raw, ['baseUrl', 'BaseUrl']),
+        model: textValue(raw, ['model', 'Model']),
+        apiKeyConfigured: booleanValue(raw, ['apiKeyConfigured', 'ApiKeyConfigured']),
+        timeoutSeconds: numberValue(raw, ['timeoutSeconds', 'TimeoutSeconds']),
+        maxOutputTokens: numberValue(raw, ['maxOutputTokens', 'MaxOutputTokens']),
+        thinkingMode: textValue(raw, ['thinkingMode', 'ThinkingMode']),
+        reasoningEffort: textValue(raw, ['reasoningEffort', 'ReasoningEffort']),
+        validationErrors: arrayValue(raw, ['validationErrors', 'ValidationErrors']).map(String),
+      }
+    }),
+    recentAgentRuns: arrayValue(data, ['recentAgentRuns', 'RecentAgentRuns']).map((value) => {
+      const raw = record(value)
+      return {
+        runId: numberValue(raw, ['runID', 'runId', 'RunID', 'RunId']),
+        conversationId: numberValue(raw, ['conversationID', 'conversationId', 'ConversationID', 'ConversationId']),
+        conversationTitle: textValue(raw, ['conversationTitle', 'ConversationTitle']),
+        userId: numberValue(raw, ['userID', 'userId', 'UserID', 'UserId']),
+        username: textValue(raw, ['username', 'Username']),
+        clientRequestId: textValue(raw, ['clientRequestID', 'clientRequestId', 'ClientRequestID', 'ClientRequestId']),
+        status: textValue(raw, ['status', 'Status']),
+        entryAgentId: textValue(raw, ['entryAgentID', 'entryAgentId', 'EntryAgentID', 'EntryAgentId']),
+        currentAgentId: textValue(raw, ['currentAgentID', 'currentAgentId', 'CurrentAgentID', 'CurrentAgentId']),
+        currentStage: textValue(raw, ['currentStage', 'CurrentStage']),
+        modelCallCount: numberValue(raw, ['modelCallCount', 'ModelCallCount']),
+        handoffCount: numberValue(raw, ['handoffCount', 'HandoffCount']),
+        inputTokens: numberValue(raw, ['inputTokens', 'InputTokens']),
+        outputTokens: numberValue(raw, ['outputTokens', 'OutputTokens']),
+        durationMs: numberValue(raw, ['durationMs', 'DurationMs']),
+        errorCode: textValue(raw, ['errorCode', 'ErrorCode']),
+        errorMessage: textValue(raw, ['errorMessage', 'ErrorMessage']),
+        startedAt: textValue(raw, ['startedAt', 'StartedAt']),
+        completedAt: textValue(raw, ['completedAt', 'CompletedAt']),
+        latestEvent: textValue(raw, ['latestEvent', 'LatestEvent']),
+      }
+    }),
+    corePolicy: {
+      version: textValue(core, ['version', 'Version']),
+      editable: booleanValue(core, ['editable', 'Editable']),
+      summary: textValue(core, ['summary', 'Summary']),
+    },
+    policyVersions: arrayValue(data, ['policyVersions', 'PolicyVersions']).map((value) => {
+      const raw = record(value)
+      return {
+        policyVersionId: textValue(raw, ['policyVersionID', 'policyVersionId', 'PolicyVersionID', 'PolicyVersionId']),
+        versionNumber: numberValue(raw, ['versionNumber', 'VersionNumber']),
+        name: textValue(raw, ['name', 'Name']),
+        businessPrompt: textValue(raw, ['businessPrompt', 'BusinessPrompt']),
+        isPublished: booleanValue(raw, ['isPublished', 'IsPublished']),
+        createdAt: textValue(raw, ['createdAt', 'CreatedAt']),
+        publishedAt: textValue(raw, ['publishedAt', 'PublishedAt']),
+      }
+    }),
+    rolePolicies: arrayValue(data, ['rolePolicies', 'RolePolicies']).map((value) => {
+      const raw = record(value)
+      return {
+        rolePolicyId: textValue(raw, ['rolePolicyID', 'rolePolicyId', 'RolePolicyID', 'RolePolicyId']),
+        role: textValue(raw, ['role', 'Role'], 'FreeUser') as AdminRole,
+        assistantEnabled: booleanValue(raw, ['assistantEnabled', 'AssistantEnabled']),
+        canProposeGeneration: booleanValue(raw, ['canProposeGeneration', 'CanProposeGeneration']),
+        canExecuteGeneration: booleanValue(raw, ['canExecuteGeneration', 'CanExecuteGeneration']),
+        canAutoAddToProject: booleanValue(raw, ['canAutoAddToProject', 'CanAutoAddToProject']),
+        maxConcurrentJobs: numberValue(raw, ['maxConcurrentJobs', 'MaxConcurrentJobs'], 1),
+        allowedWorkflowCodes: arrayValue(raw, ['allowedWorkflowCodes', 'AllowedWorkflowCodes']).map(String),
+      }
+    }),
+    userOverrides: arrayValue(data, ['userOverrides', 'UserOverrides']).map((value) => {
+      const raw = record(value)
+      const workflows = pick<unknown>(raw, ['allowedWorkflowCodes', 'AllowedWorkflowCodes'], null)
+      return {
+        userPolicyOverrideId: textValue(raw, ['userPolicyOverrideID', 'userPolicyOverrideId', 'UserPolicyOverrideID', 'UserPolicyOverrideId']),
+        userId: textValue(raw, ['userID', 'userId', 'UserID', 'UserId']),
+        username: textValue(raw, ['username', 'Username']),
+        assistantEnabled: nullableBooleanValue(raw, ['assistantEnabled', 'AssistantEnabled']),
+        canProposeGeneration: nullableBooleanValue(raw, ['canProposeGeneration', 'CanProposeGeneration']),
+        canExecuteGeneration: nullableBooleanValue(raw, ['canExecuteGeneration', 'CanExecuteGeneration']),
+        canAutoAddToProject: nullableBooleanValue(raw, ['canAutoAddToProject', 'CanAutoAddToProject']),
+        maxConcurrentJobs: pick<unknown>(raw, ['maxConcurrentJobs', 'MaxConcurrentJobs'], null) === null ? null : numberValue(raw, ['maxConcurrentJobs', 'MaxConcurrentJobs']),
+        allowedWorkflowCodes: Array.isArray(workflows) ? workflows.map(String) : null,
+        expiresAt: textValue(raw, ['expiresAt', 'ExpiresAt']),
+        updatedAt: textValue(raw, ['updatedAt', 'UpdatedAt']),
+      }
+    }),
+    workflows: arrayValue(data, ['workflows', 'Workflows']).map((value) => {
+      const raw = record(value)
+      return {
+        workflowCode: textValue(raw, ['workflowCode', 'WorkflowCode']),
+        name: textValue(raw, ['name', 'Name']),
+        outputType: textValue(raw, ['outputType', 'OutputType']),
+        costUnits: numberValue(raw, ['costUnits', 'CostUnits'], 1),
+      }
+    }),
+  }
+}
+
+async function createAssistantPolicyDraft(input: { name: string; businessPrompt: string }): Promise<void> {
+  await requestWithAuth('/Admin/ai-governance/policy/drafts', { method: 'POST', body: JSON.stringify(input) })
+}
+
+async function publishAssistantPolicy(policyVersionId: string): Promise<void> {
+  await requestWithAuth(`/Admin/ai-governance/policy/${encodeURIComponent(policyVersionId)}/publish`, { method: 'POST' })
+}
+
+async function updateAiRolePolicy(input: AdminAiRolePolicy): Promise<void> {
+  await requestWithAuth(`/Admin/ai-governance/roles/${encodeURIComponent(input.role)}`, {
+    method: 'PUT',
+    body: JSON.stringify(input),
+  })
+}
+
+async function updateAiUserOverride(userId: string, input: UpdateAdminAiUserOverrideInput): Promise<void> {
+  await requestWithAuth(`/Admin/ai-governance/users/${encodeURIComponent(userId)}`, {
+    method: 'PUT',
+    body: JSON.stringify(input),
+  })
+}
+
+async function deleteAiUserOverride(userId: string): Promise<void> {
+  await requestWithAuth(`/Admin/ai-governance/users/${encodeURIComponent(userId)}`, { method: 'DELETE' })
+}
+
+async function testAssistantProvider(): Promise<{ model: string; latencyMs: number }> {
+  const data = unwrap(await requestWithAuth('/Admin/ai-governance/provider/test', { method: 'POST' }))
+  return { model: textValue(data, ['model', 'Model']), latencyMs: numberValue(data, ['latencyMs', 'LatencyMs']) }
+}
+
+async function testAgentModelProfile(profileId: string): Promise<{ model: string; provider: string; durationMs: number }> {
+  const data = unwrap(await requestWithAuth(`/Admin/ai-governance/model-profiles/${encodeURIComponent(profileId)}/test`, { method: 'POST' }))
+  return {
+    model: textValue(data, ['model', 'Model']),
+    provider: textValue(data, ['provider', 'Provider']),
+    durationMs: numberValue(data, ['durationMs', 'DurationMs']),
+  }
+}
+
+async function reloadAgentConfiguration(): Promise<{ valid: boolean; validationErrors: string[] }> {
+  const data = unwrap(await requestWithAuth('/Admin/ai-governance/agent-config/reload', { method: 'POST' }))
+  return {
+    valid: booleanValue(data, ['valid', 'Valid']),
+    validationErrors: arrayValue(data, ['validationErrors', 'ValidationErrors']).map(String),
+  }
+}
+
+async function getAgentRunDiagnostics(runId: number): Promise<AdminAgentRunDetail> {
+  const data = unwrap(await requestWithAuth(`/Admin/ai-governance/agent-runs/${runId}`))
+  return {
+    runId: numberValue(data, ['runID', 'runId', 'RunID', 'RunId']),
+    conversationId: numberValue(data, ['conversationID', 'conversationId', 'ConversationID', 'ConversationId']),
+    conversationTitle: textValue(data, ['conversationTitle', 'ConversationTitle']),
+    userId: numberValue(data, ['userID', 'userId', 'UserID', 'UserId']),
+    username: textValue(data, ['username', 'Username']),
+    clientRequestId: textValue(data, ['clientRequestID', 'clientRequestId', 'ClientRequestID', 'ClientRequestId']),
+    status: textValue(data, ['status', 'Status']),
+    entryAgentId: textValue(data, ['entryAgentID', 'entryAgentId', 'EntryAgentID', 'EntryAgentId']),
+    currentAgentId: textValue(data, ['currentAgentID', 'currentAgentId', 'CurrentAgentID', 'CurrentAgentId']),
+    currentStage: textValue(data, ['currentStage', 'CurrentStage']),
+    modelCallCount: numberValue(data, ['modelCallCount', 'ModelCallCount']),
+    handoffCount: numberValue(data, ['handoffCount', 'HandoffCount']),
+    inputTokens: numberValue(data, ['inputTokens', 'InputTokens']),
+    outputTokens: numberValue(data, ['outputTokens', 'OutputTokens']),
+    durationMs: numberValue(data, ['durationMs', 'DurationMs']),
+    errorCode: textValue(data, ['errorCode', 'ErrorCode']),
+    errorMessage: textValue(data, ['errorMessage', 'ErrorMessage']),
+    startedAt: textValue(data, ['startedAt', 'StartedAt']),
+    completedAt: textValue(data, ['completedAt', 'CompletedAt']),
+    latestEvent: '',
+    events: arrayValue(data, ['events', 'Events']).map((value) => {
+      const raw = record(value)
+      return {
+        eventId: numberValue(raw, ['eventID', 'eventId', 'EventID', 'EventId']),
+        sequence: numberValue(raw, ['sequence', 'Sequence']),
+        agentId: textValue(raw, ['agentID', 'agentId', 'AgentID', 'AgentId']),
+        eventType: textValue(raw, ['eventType', 'EventType']),
+        stage: textValue(raw, ['stage', 'Stage']),
+        title: textValue(raw, ['title', 'Title']),
+        detail: textValue(raw, ['detail', 'Detail']),
+        dataJson: textValue(raw, ['dataJson', 'DataJson']),
+        createdAt: textValue(raw, ['createdAt', 'CreatedAt']),
+      }
+    }),
+    artifacts: arrayValue(data, ['artifacts', 'Artifacts']).map((value) => {
+      const raw = record(value)
+      return {
+        artifactId: numberValue(raw, ['artifactID', 'artifactId', 'ArtifactID', 'ArtifactId']),
+        agentId: textValue(raw, ['agentID', 'agentId', 'AgentID', 'AgentId']),
+        artifactType: textValue(raw, ['artifactType', 'ArtifactType']),
+        version: numberValue(raw, ['version', 'Version']),
+        status: textValue(raw, ['status', 'Status']),
+        title: textValue(raw, ['title', 'Title']),
+        createdAt: textValue(raw, ['createdAt', 'CreatedAt']),
+        contentLength: numberValue(raw, ['contentLength', 'ContentLength']),
+      }
+    }),
+  }
+}
+
 export const adminApi = {
   getOverview,
   getUsers,
@@ -663,4 +1094,14 @@ export const adminApi = {
   updateGalleryImage,
   deleteGalleryImage,
   restoreGalleryImage,
+  getAiGovernance,
+  createAssistantPolicyDraft,
+  publishAssistantPolicy,
+  updateAiRolePolicy,
+  updateAiUserOverride,
+  deleteAiUserOverride,
+  testAssistantProvider,
+  testAgentModelProfile,
+  reloadAgentConfiguration,
+  getAgentRunDiagnostics,
 }

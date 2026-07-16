@@ -1,0 +1,10 @@
+{
+  "id": "multi-room-project",
+  "description": "一个对话推进完整项目中的多个房间",
+  "expected": {
+    "conversationScope": "project",
+    "roomStateScope": "per_room",
+    "mustPreserve": ["project_design_language", "confirmed_decisions"],
+    "mustNotRequire": ["new_conversation_for_each_room"]
+  }
+}

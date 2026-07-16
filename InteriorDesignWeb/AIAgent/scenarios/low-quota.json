@@ -1,0 +1,9 @@
+{
+  "id": "low-quota",
+  "description": "用户要求生成图片但额度不足",
+  "expected": {
+    "mustNotCall": ["submit_paid_generation"],
+    "presentationMode": "confirmation_card",
+    "userMessage": "额度不足时说明所需额度和剩余额度，不创建任务。"
+  }
+}

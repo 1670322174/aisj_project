@@ -2,7 +2,11 @@
   "Logging": {
     "LogLevel": {
       "Default": "Information",
-      "Microsoft.AspNetCore": "Warning"
+      "Microsoft.AspNetCore": "Warning",
+      "Microsoft.EntityFrameworkCore.Database.Command": "Warning",
+      "System.Net.Http.HttpClient": "Warning",
+      "InteriorDesignWeb.Services.Assistant": "Information",
+      "InteriorDesignWeb.Middlewares.RequestTelemetryMiddleware": "Information"
     }
   },
   "AllowedHosts": "*",
@@ -55,5 +59,66 @@
     "MaxUploadBytes": 52428800,
     "UseProxy": false,
     "AllowInvalidCertificate": false
+  },
+  "AgentPlatform": {
+    "Enabled": false,
+    "ConfigurationRoot": "AIAgent",
+    "StrictValidation": true,
+    "FallbackToLegacy": true,
+      "MaxModelCallsPerRun": 5
+  },
+  "AgentModels": {
+    "Profiles": {
+      "minimax_frontdesk": {
+        "Enabled": true,
+        "Provider": "minimax",
+        "Protocol": "anthropic",
+        "BaseUrl": "https://api.minimaxi.com/anthropic/",
+        "ApiKey": "your-minimax-api-key",
+        "Model": "MiniMax-M3",
+        "TimeoutSeconds": 120,
+        "MaxOutputTokens": 4000,
+        "ThinkingMode": "disabled",
+        "Capabilities": { "Text": true, "Vision": false, "Tools": true, "JsonOutput": false, "Thinking": true }
+      },
+      "deepseek_worker": {
+        "Enabled": true,
+        "Provider": "deepseek",
+        "Protocol": "openai",
+        "BaseUrl": "https://api.deepseek.com/",
+        "ApiKey": "your-deepseek-api-key",
+        "Model": "deepseek-v4-flash",
+        "TimeoutSeconds": 180,
+        "MaxOutputTokens": 8000,
+        "ThinkingMode": "enabled",
+        "ReasoningEffort": "high",
+        "Capabilities": { "Text": true, "Vision": false, "Tools": true, "JsonOutput": true, "Thinking": true }
+      },
+      "deepseek_design_pro": {
+        "Enabled": true,
+        "Provider": "deepseek",
+        "Protocol": "openai",
+        "BaseUrl": "https://api.deepseek.com/",
+        "ApiKey": "your-deepseek-api-key",
+        "Model": "deepseek-v4-pro",
+        "TimeoutSeconds": 300,
+        "MaxOutputTokens": 16000,
+        "ThinkingMode": "enabled",
+        "ReasoningEffort": "high",
+        "Capabilities": { "Text": true, "Vision": false, "Tools": true, "JsonOutput": true, "Thinking": true }
+      },
+      "volc_vision": {
+        "Enabled": true,
+        "Provider": "volc-ark",
+        "Protocol": "responses",
+        "BaseUrl": "https://ark.cn-beijing.volces.com/api/v3/",
+        "ApiKey": "your-volc-ark-api-key",
+        "Model": "doubao-seed-2-1-turbo-260628",
+        "TimeoutSeconds": 180,
+        "MaxOutputTokens": 8000,
+        "ThinkingMode": "disabled",
+        "Capabilities": { "Text": true, "Vision": true, "Tools": true, "JsonOutput": true, "Thinking": true }
+      }
+    }
   }
 }

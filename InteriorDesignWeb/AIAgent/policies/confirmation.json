@@ -1,0 +1,15 @@
+{
+  "version": "1.0.0",
+  "requireConfirmation": [
+    "submit_paid_generation",
+    "overwrite_project_design",
+    "delete_project_data",
+    "publish_agent_configuration"
+  ],
+  "allowWithoutConfirmation": [
+    "read_owned_project_data",
+    "analyze_uploaded_attachment",
+    "create_draft_artifact",
+    "calculate_test_budget"
+  ]
+}

@@ -24,11 +24,33 @@ public class ExceptionHandlingMiddleware
         }
         catch (AppException ex)
         {
+            var logLevel = ex.StatusCode >= 500 ? LogLevel.Warning : LogLevel.Information;
+            _logger.Log(
+                logLevel,
+                ex.StatusCode >= 500 ? ex : null,
+                "Handled application error. Method={Method}, Path={Path}, StatusCode={StatusCode}, ErrorCode={ErrorCode}, DiagnosticReason={DiagnosticReason}, DiagnosticStage={DiagnosticStage}, Retryable={Retryable}, UpstreamRequestId={UpstreamRequestId}, RequestId={RequestId}",
+                context.Request.Method,
+                context.Request.Path.Value,
+                ex.StatusCode,
+                ex.Code,
+                ex.DiagnosticReason,
+                ex.DiagnosticStage,
+                ex.Retryable,
+                ex.UpstreamRequestId,
+                context.TraceIdentifier);
             await WriteErrorAsync(
                 context,
                 ex.StatusCode,
                 ex.Code,
-                ex.Message
+                ex.Message,
+                new ApiErrorDetails
+                {
+                    Reason = ex.DiagnosticReason,
+                    Stage = ex.DiagnosticStage,
+                    Hint = ex.DiagnosticHint,
+                    UpstreamRequestId = ex.UpstreamRequestId,
+                    Retryable = ex.Retryable
+                }
             );
         }
         catch (UnauthorizedAccessException ex)
@@ -75,7 +97,8 @@ public class ExceptionHandlingMiddleware
         HttpContext context,
         int statusCode,
         string code,
-        string message)
+        string message,
+        ApiErrorDetails? error = null)
     {
         if (context.Response.HasStarted)
         {
@@ -84,11 +107,14 @@ public class ExceptionHandlingMiddleware
 
         context.Response.StatusCode = statusCode;
         context.Response.ContentType = "application/json; charset=utf-8";
+        context.Response.Headers.CacheControl = "no-store";
+        context.Response.Headers["X-Request-ID"] = context.TraceIdentifier;
 
         var response = ApiResponse.Fail(
             code,
             message,
-            context.TraceIdentifier
+            context.TraceIdentifier,
+            error
         );
 
         var json = JsonSerializer.Serialize(response, new JsonSerializerOptions

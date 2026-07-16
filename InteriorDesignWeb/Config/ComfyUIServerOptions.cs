@@ -24,9 +24,13 @@ public sealed class ComfyUIServerOptions
     public string? AuthorizationHeader { get; set; }
 
     /// <summary>
-    /// 提交请求携带的客户端标识。当前使用 HTTP 轮询，不依赖 WebSocket。
+    /// 提交请求和WebSocket监听共同使用的客户端标识。
     /// </summary>
     public string ClientId { get; set; } = "interior-design-web";
+
+    public bool WebSocketProgressEnabled { get; set; } = true;
+
+    public int WebSocketReconnectSeconds { get; set; } = 5;
 
     public int RequestTimeoutMinutes { get; set; } = 15;
 

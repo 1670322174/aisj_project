@@ -1,0 +1,15 @@
+{
+  "version": "1.0.0",
+  "defaultAgentId": "orchestrator",
+  "maxHandoffDepth": 3,
+  "maxAgentsPerRun": 4,
+  "agentFiles": [
+    "agents/orchestrator.json",
+    "agents/designer.json",
+    "agents/prompt-engineer.json",
+    "agents/vision.json",
+    "agents/result-evaluator.json",
+    "agents/materials-budget.json",
+    "agents/iteration-analyst.json"
+  ]
+}

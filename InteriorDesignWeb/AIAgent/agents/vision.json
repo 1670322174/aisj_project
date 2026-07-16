@@ -1,0 +1,17 @@
+{
+  "id": "vision",
+  "displayName": "视觉分析 Agent",
+  "description": "识别房间照片、毛坯房、风格参考图、户型图和生成结果。",
+  "enabled": true,
+  "mode": "production",
+  "defaultModelProfile": "volc_vision",
+  "allowedModelProfiles": ["volc_vision"],
+  "systemPromptFile": "agents/vision.system.md",
+  "skillIds": ["visual-analysis"],
+  "allowedTools": ["emit_visual_artifact"],
+  "handoffTargets": ["designer"],
+  "presentationModes": ["internal", "confirmation_card", "status_only"],
+  "maxSteps": 4,
+  "maxOutputTokens": 5000,
+  "timeoutSeconds": 180
+}

@@ -11,4 +11,7 @@ public sealed class AssistantOptions
     public int MaxContextMessages { get; set; } = 20;
     public int MaxOutputTokens { get; set; } = 2000;
     public bool UseJsonResponseFormat { get; set; } = true;
+    public string ResponseFormatMode { get; set; } = "auto";
+    public bool RepairInvalidStructuredOutput { get; set; } = true;
+    public bool AllowNaturalLanguageFallback { get; set; } = true;
 }

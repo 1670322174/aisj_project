@@ -97,6 +97,14 @@ export interface AIJobResult {
   createdAt: string
 }
 
+export interface AIJobProgressEvent {
+  jobId: string
+  status: string
+  progressValue: number
+  errorMessage?: string | null
+  updatedAt: string
+}
+
 export interface PagedJobs {
   items: AIJob[]
   page: number
@@ -272,6 +280,35 @@ async function getJobResults(jobId: string): Promise<AIJobResult[]> {
   return raw.map((item) => normalizeResult(item as Record<string, unknown>))
 }
 
+function subscribeJobProgress(
+  jobId: string,
+  onProgress: (event: AIJobProgressEvent) => void,
+  onConnectionChange?: (connected: boolean) => void,
+): () => void {
+  const url = `${BASE_URL}/ai/jobs/${encodeURIComponent(jobId)}/events`
+  const source = new EventSource(url, { withCredentials: true })
+  source.onopen = () => onConnectionChange?.(true)
+  source.addEventListener('progress', (event) => {
+    try {
+      const raw = JSON.parse((event as MessageEvent<string>).data) as Record<string, unknown>
+      onProgress({
+        jobId: String(pick(raw, ['jobId', 'JobId'], jobId)),
+        status: String(pick(raw, ['status', 'Status'], 'queued')),
+        progressValue: Number(pick(raw, ['progressValue', 'ProgressValue'], 0)),
+        errorMessage: pick(raw, ['errorMessage', 'ErrorMessage'], null),
+        updatedAt: String(pick(raw, ['updatedAt', 'UpdatedAt'], '')),
+      })
+    } catch {
+      // Ignore malformed events and keep the HTTP polling fallback active.
+    }
+  })
+  source.onerror = () => {
+    onConnectionChange?.(false)
+    source.close()
+  }
+  return () => source.close()
+}
+
 function fetchJobResultMedia(
   jobId: string,
   aiImageId: number,
@@ -308,6 +345,7 @@ export const aiApi = {
   submitGeneration,
   getJob,
   getJobResults,
+  subscribeJobProgress,
   fetchJobResultMedia,
   getJobs,
   cancelJob,

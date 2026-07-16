@@ -154,7 +154,7 @@
                 var thumbPath = originalPath
                     .Replace("InteriorDesignImages", "thumbnails")
                     .Replace(Path.GetFileName(originalPath),
-                        Path.GetFileNameWithoutExtension(originalPath) + "_thumbnail" + Path.GetExtension(originalPath));
+                        Path.GetFileNameWithoutExtension(originalPath) + "_thumbnail.jpg");
 
                 // ==== 2. 生成缩略图 ====  
                 imageStream.Position = 0;
@@ -372,6 +372,53 @@
 
             objectKey = objectKey.Replace("\\", "/").TrimStart('/');
             return $"{aiBaseUrl}/{objectKey}";
+        }
+
+        /// <summary>
+        /// Generates a short-lived URL for server-to-server AI model access.
+        /// The URL must never be persisted in the database or exposed as a durable asset URL.
+        /// </summary>
+        public string GenerateAISignedUrl(string objectKey, int durationSeconds = 600)
+        {
+            var normalizedKey = objectKey.Replace("\\", "/").TrimStart('/');
+            try
+            {
+                return _cosXml.GenerateSignURL(new PreSignatureStruct
+                {
+                    appid = _config["COS:AppId"],
+                    region = _config["COS:AIRegion"],
+                    bucket = _config["COS:AIBucket"],
+                    key = normalizedKey,
+                    httpMethod = "GET",
+                    isHttps = true,
+                    signDurationSecond = Math.Clamp(durationSeconds, 60, 3600)
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "AI COS 预签名 URL 生成失败 Key={ObjectKey}", normalizedKey);
+                throw new CosException("生成 AI 资源访问链接失败", ex);
+            }
+        }
+
+        public async Task<(Stream Stream, string ContentType)> GetAIObjectStreamAsync(
+            string objectKey,
+            CancellationToken cancellationToken = default)
+        {
+            using var httpClient = new HttpClient();
+            using var response = await httpClient.GetAsync(
+                GenerateAISignedUrl(objectKey),
+                HttpCompletionOption.ResponseHeadersRead,
+                cancellationToken);
+            if (!response.IsSuccessStatusCode)
+                throw new CosException($"COS访问失败: {response.StatusCode}", null);
+
+            var memoryStream = new MemoryStream();
+            await response.Content.CopyToAsync(memoryStream, cancellationToken);
+            memoryStream.Position = 0;
+            return (
+                memoryStream,
+                response.Content.Headers.ContentType?.ToString() ?? "application/octet-stream");
         }
 
         /// <summary>

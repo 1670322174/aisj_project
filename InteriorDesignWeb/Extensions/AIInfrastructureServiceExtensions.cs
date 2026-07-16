@@ -93,6 +93,9 @@ public static class AIInfrastructureServiceExtensions
         services.TryAddScoped<IAIProvider, ComfyUIServerProvider>();
         services.TryAddScoped<IAIResultService, AIResultService>();
         services.TryAddScoped<IAIGenerationService, AIGenerationService>();
+        services.TryAddSingleton<AIJobProgressBroker>();
+        services.TryAddSingleton<AIJobRefreshCoordinator>();
+        services.AddHostedService<ComfyUIProgressListener>();
         services.AddHostedService<AIJobBackgroundWorker>();
 
         services.TryAddScoped<IRoleLimitService, RoleLimitService>();

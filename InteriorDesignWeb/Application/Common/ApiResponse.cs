@@ -1,5 +1,14 @@
 namespace InteriorDesignWeb.Application.Common;
 
+public sealed class ApiErrorDetails
+{
+    public string? Reason { get; set; }
+    public string? Stage { get; set; }
+    public string? Hint { get; set; }
+    public string? UpstreamRequestId { get; set; }
+    public bool Retryable { get; set; }
+}
+
 public class ApiResponse<T>
 {
     public bool Success { get; set; }
@@ -7,6 +16,7 @@ public class ApiResponse<T>
     public string Message { get; set; } = "success";
     public T? Data { get; set; }
     public string? RequestId { get; set; }
+    public ApiErrorDetails? Error { get; set; }
     public DateTime Timestamp { get; set; } = DateTime.UtcNow;
 
     public static ApiResponse<T> Ok(T? data, string message = "success", string? requestId = null)
@@ -21,7 +31,11 @@ public class ApiResponse<T>
         };
     }
 
-    public static ApiResponse<T> Fail(string code, string message, string? requestId = null)
+    public static ApiResponse<T> Fail(
+        string code,
+        string message,
+        string? requestId = null,
+        ApiErrorDetails? error = null)
     {
         return new ApiResponse<T>
         {
@@ -29,7 +43,8 @@ public class ApiResponse<T>
             Code = code,
             Message = message,
             Data = default,
-            RequestId = requestId
+            RequestId = requestId,
+            Error = error
         };
     }
 }
@@ -41,8 +56,12 @@ public class ApiResponse : ApiResponse<object>
         return ApiResponse<object>.Ok(null, message, requestId);
     }
 
-    public static new ApiResponse<object> Fail(string code, string message, string? requestId = null)
+    public static new ApiResponse<object> Fail(
+        string code,
+        string message,
+        string? requestId = null,
+        ApiErrorDetails? error = null)
     {
-        return ApiResponse<object>.Fail(code, message, requestId);
+        return ApiResponse<object>.Fail(code, message, requestId, error);
     }
 }

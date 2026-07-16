@@ -24,6 +24,13 @@ public class DesignHubContext : DbContext
     public DbSet<AssistantConversation> assistantconversations { get; set; }
     public DbSet<AssistantMessage> assistantmessages { get; set; }
     public DbSet<AssistantGenerationAction> assistantgenerationactions { get; set; }
+    public DbSet<AssistantAgentRun> assistantagentruns { get; set; }
+    public DbSet<AssistantAgentEvent> assistantagentevents { get; set; }
+    public DbSet<AssistantAgentArtifact> assistantagentartifacts { get; set; }
+    public DbSet<AssistantAttachment> assistantattachments { get; set; }
+    public DbSet<AssistantPolicyVersion> assistantpolicyversions { get; set; }
+    public DbSet<AiRolePolicy> airolepolicies { get; set; }
+    public DbSet<AiUserPolicyOverride> aiuserpolicyoverrides { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -44,6 +51,13 @@ public class DesignHubContext : DbContext
         modelBuilder.Entity<AssistantConversation>().ToTable("assistantconversations");
         modelBuilder.Entity<AssistantMessage>().ToTable("assistantmessages");
         modelBuilder.Entity<AssistantGenerationAction>().ToTable("assistantgenerationactions");
+        modelBuilder.Entity<AssistantAgentRun>().ToTable("assistantagentruns");
+        modelBuilder.Entity<AssistantAgentEvent>().ToTable("assistantagentevents");
+        modelBuilder.Entity<AssistantAgentArtifact>().ToTable("assistantagentartifacts");
+        modelBuilder.Entity<AssistantAttachment>().ToTable("assistantattachments");
+        modelBuilder.Entity<AssistantPolicyVersion>().ToTable("assistantpolicyversions");
+        modelBuilder.Entity<AiRolePolicy>().ToTable("airolepolicies");
+        modelBuilder.Entity<AiUserPolicyOverride>().ToTable("aiuserpolicyoverrides");
 
         modelBuilder.Entity<AssistantConversation>()
             .HasOne(conversation => conversation.User)
@@ -100,6 +114,54 @@ public class DesignHubContext : DbContext
         modelBuilder.Entity<AssistantGenerationAction>()
             .HasIndex(action => action.JobID);
 
+        modelBuilder.Entity<AssistantAgentRun>()
+            .HasOne(run => run.Conversation)
+            .WithMany(conversation => conversation.AgentRuns)
+            .HasForeignKey(run => run.ConversationID)
+            .OnDelete(DeleteBehavior.Cascade);
+        modelBuilder.Entity<AssistantAgentRun>()
+            .HasIndex(run => new { run.ConversationID, run.ClientRequestID })
+            .IsUnique();
+        modelBuilder.Entity<AssistantAgentRun>()
+            .HasIndex(run => new { run.UserID, run.StartedAt });
+
+        modelBuilder.Entity<AssistantAgentEvent>()
+            .HasOne(agentEvent => agentEvent.Run)
+            .WithMany(run => run.Events)
+            .HasForeignKey(agentEvent => agentEvent.RunID)
+            .OnDelete(DeleteBehavior.Cascade);
+        modelBuilder.Entity<AssistantAgentEvent>()
+            .HasIndex(agentEvent => new { agentEvent.RunID, agentEvent.Sequence })
+            .IsUnique();
+
+        modelBuilder.Entity<AssistantAgentArtifact>()
+            .HasOne(artifact => artifact.Run)
+            .WithMany(run => run.Artifacts)
+            .HasForeignKey(artifact => artifact.RunID)
+            .OnDelete(DeleteBehavior.Cascade);
+        modelBuilder.Entity<AssistantAgentArtifact>()
+            .HasIndex(artifact => new { artifact.ConversationID, artifact.ArtifactType, artifact.Version });
+
+        modelBuilder.Entity<AssistantAttachment>()
+            .HasOne(attachment => attachment.Conversation)
+            .WithMany(conversation => conversation.Attachments)
+            .HasForeignKey(attachment => attachment.ConversationID)
+            .OnDelete(DeleteBehavior.Cascade);
+        modelBuilder.Entity<AssistantAttachment>()
+            .HasOne(attachment => attachment.Message)
+            .WithMany()
+            .HasForeignKey(attachment => attachment.MessageID)
+            .OnDelete(DeleteBehavior.SetNull);
+        modelBuilder.Entity<AssistantAttachment>()
+            .HasOne(attachment => attachment.Room)
+            .WithMany()
+            .HasForeignKey(attachment => attachment.RoomID)
+            .OnDelete(DeleteBehavior.SetNull);
+        modelBuilder.Entity<AssistantAttachment>()
+            .HasIndex(attachment => new { attachment.ConversationID, attachment.IsDeleted, attachment.CreatedAt });
+        modelBuilder.Entity<AssistantAttachment>()
+            .HasIndex(attachment => new { attachment.UserID, attachment.Sha256 });
+
         modelBuilder.Entity<Image>()
             .HasOne(image => image.DeletedByUser)
             .WithMany()
@@ -115,6 +177,28 @@ public class DesignHubContext : DbContext
                 v => v.ToString(),
                 v => (UserRole)Enum.Parse(typeof(UserRole), v))
             .HasMaxLength(20);
+
+        modelBuilder.Entity<AiRolePolicy>()
+            .Property(item => item.Role)
+            .HasConversion(
+                value => value.ToString(),
+                value => Enum.Parse<UserRole>(value))
+            .HasMaxLength(20);
+
+        modelBuilder.Entity<AiRolePolicy>()
+            .HasIndex(item => item.Role)
+            .IsUnique();
+
+        modelBuilder.Entity<AiUserPolicyOverride>()
+            .HasIndex(item => item.UserID)
+            .IsUnique();
+
+        modelBuilder.Entity<AssistantPolicyVersion>()
+            .HasIndex(item => item.VersionNumber)
+            .IsUnique();
+
+        modelBuilder.Entity<AssistantPolicyVersion>()
+            .HasIndex(item => new { item.IsPublished, item.PublishedAt });
 
         modelBuilder.Entity<Project>()
             .HasOne(p => p.User)

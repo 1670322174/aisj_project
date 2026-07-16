@@ -19,6 +19,16 @@ public sealed class AdminSecurityTests
     }
 
     [Fact]
+    public void AdminAiGovernanceController_RequiresAdministratorRole()
+    {
+        var authorize = Assert.Single(
+            typeof(AdminAIGovernanceController).GetCustomAttributes(typeof(AuthorizeAttribute), inherit: true)
+                .Cast<AuthorizeAttribute>());
+
+        Assert.Equal(nameof(UserRole.Administrator), authorize.Roles);
+    }
+
+    [Fact]
     public async Task UnsafeAdminRequest_WithoutProtectionHeader_IsRejected()
     {
         var nextCalled = false;

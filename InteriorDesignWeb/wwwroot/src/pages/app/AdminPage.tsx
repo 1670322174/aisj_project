@@ -2,6 +2,7 @@ import {
   Activity,
   AlertCircle,
   BarChart3,
+  Bot,
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
@@ -33,6 +34,9 @@ import {
   type AdminApiEndpoint,
   type AdminAuditLog,
   type AdminGalleryImage,
+  type AdminAiGovernance,
+  type AdminAgentRunDetail,
+  type AdminAiRolePolicy,
   type AdminOverview,
   type AdminRole,
   type AdminSession,
@@ -43,7 +47,7 @@ import {
 } from '@/api/modules/admin'
 import { cn } from '@/utils/cn'
 
-type AdminTab = 'overview' | 'users' | 'gallery' | 'system' | 'audit'
+type AdminTab = 'overview' | 'users' | 'gallery' | 'ai' | 'system' | 'audit'
 
 const panelClass = 'rounded-2xl border border-[var(--border-default)] bg-[var(--bg-card)] shadow-[var(--shadow-card)]'
 const inputClass = 'w-full rounded-xl border border-[var(--border-default)] bg-[var(--bg-input)] px-3.5 py-2.5 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-placeholder)]'
@@ -64,6 +68,7 @@ const TAB_ITEMS: Array<{ key: AdminTab; label: string; icon: typeof Gauge }> = [
   { key: 'overview', label: '数据概览', icon: Gauge },
   { key: 'users', label: '用户管理', icon: Users },
   { key: 'gallery', label: '图库管理', icon: FileImage },
+  { key: 'ai', label: 'AI 治理', icon: Bot },
   { key: 'system', label: '系统与接口', icon: Server },
   { key: 'audit', label: '审计日志', icon: Activity },
 ]
@@ -884,6 +889,351 @@ function HealthCard({ icon, title, status, detail, latency }: { icon: ReactNode;
   return <div className={cn(panelClass, 'p-4')}><div className="flex items-start justify-between gap-3"><div className="rounded-xl bg-[var(--bg-input)] p-2.5 text-[var(--accent)]">{icon}</div><StatusBadge value={status} /></div><p className="mt-4 text-sm font-semibold text-[var(--text-primary)]">{title}</p><p className="mt-1 truncate text-xs text-[var(--text-tertiary)]" title={detail}>{detail || '未提供详情'}</p><p className="mt-2 text-[11px] text-[var(--text-secondary)]">响应 {latency || 0} ms</p></div>
 }
 
+const ASSISTANT_SKILL_TEMPLATES = [
+  {
+    code: 'concept-director',
+    name: '灵感策划',
+    description: '从模糊需求主动形成一个推荐方向，不把构思责任推回用户。',
+    prompt: '[技能：灵感策划]\n当用户没有明确构思时，以室内设计总监身份主动补齐非关键细节。优先给出一个鲜明、可落地的推荐方向，必要时只补充一个备选方向；说明空间体验、核心材质、色彩与灯光，不罗列空泛概念。',
+  },
+  {
+    code: 'single-discovery',
+    name: '一次追问',
+    description: '最多进行一轮合并追问，回答后直接提出方案。',
+    prompt: '[技能：一次追问]\n每个设计方向最多进行一轮合并追问，只问最影响画面的 1 至 3 项。用户回答后必须使用专业假设补齐剩余信息并提出生成方案，不得因面积、材质或灯光等非关键字段为空而继续追问。若首条消息已经包含空间与风格，则不追问。',
+  },
+  {
+    code: 'prompt-architect',
+    name: '提示词工程',
+    description: '把设计方案转成稳定、专业的室内效果图提示词。',
+    prompt: '[技能：提示词工程]\n生成提示词时依次覆盖空间尺度与布局、设计风格、主辅材质、色彩关系、关键家具与功能、自然光与人工光、镜头高度与焦段、构图、写实质量。负面提示词应压制结构错误、比例失真、重复物体、低清晰度、文字水印和与目标风格冲突的元素。提示词放入 generationDraft，不在 assistantText 中全文复述。',
+  },
+  {
+    code: 'concise-editor',
+    name: '精简排版',
+    description: '限制回复长度，并使用适合聊天窗口的短段落。',
+    prompt: '[技能：精简排版]\nassistantText 默认控制在 300 个中文字符内。先用一句话给结论，再用不超过 4 个短项目符号说明方案。避免重复用户原话、避免输出字段名、JSON、完整提示词和大段背景知识。',
+  },
+]
+
+function AiGovernancePanel({ notify }: { notify: (message: string, type?: 'success' | 'error') => void }) {
+  const [data, setData] = useState<AdminAiGovernance | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+  const [draftName, setDraftName] = useState('')
+  const [draftPrompt, setDraftPrompt] = useState('')
+  const [saving, setSaving] = useState('')
+  const [selectedRun, setSelectedRun] = useState<AdminAgentRunDetail | null>(null)
+  const [loadingRunId, setLoadingRunId] = useState(0)
+  const [overrideUserId, setOverrideUserId] = useState('')
+  const [overrideValues, setOverrideValues] = useState({
+    assistantEnabled: 'inherit',
+    canProposeGeneration: 'inherit',
+    canExecuteGeneration: 'inherit',
+    canAutoAddToProject: 'inherit',
+    maxConcurrentJobs: '',
+    inheritWorkflows: true,
+    workflows: [] as string[],
+    expiresAt: '',
+  })
+
+  const load = useCallback(async () => {
+    setLoading(true)
+    setError('')
+    try {
+      const result = await adminApi.getAiGovernance()
+      setData(result)
+      const published = result.policyVersions.find((item) => item.isPublished)
+      if (!draftPrompt) setDraftPrompt(published?.businessPrompt || '')
+      if (!draftName) setDraftName(published ? `${published.name}（新版本）` : '室内设计业务规则')
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'AI 治理配置加载失败')
+    } finally {
+      setLoading(false)
+    }
+  }, [draftName, draftPrompt])
+
+  useEffect(() => { void load() }, [])
+
+  function patchRole(role: string, patch: Partial<AdminAiRolePolicy>) {
+    setData((current) => current ? {
+      ...current,
+      rolePolicies: current.rolePolicies.map((item) => item.role === role ? { ...item, ...patch } : item),
+    } : current)
+  }
+
+  async function saveRole(policy: AdminAiRolePolicy) {
+    setSaving(`role:${policy.role}`)
+    try {
+      await adminApi.updateAiRolePolicy(policy)
+      notify(`${policy.role} 的 AI 权限已保存`)
+      await load()
+    } catch (reason) {
+      notify(reason instanceof Error ? reason.message : '角色权限保存失败', 'error')
+    } finally {
+      setSaving('')
+    }
+  }
+
+  async function createDraft() {
+    if (draftName.trim().length < 2 || draftPrompt.trim().length < 20) {
+      setError('规则名称至少 2 个字符，业务规则至少 20 个字符。')
+      return
+    }
+    setSaving('draft')
+    try {
+      await adminApi.createAssistantPolicyDraft({ name: draftName.trim(), businessPrompt: draftPrompt.trim() })
+      notify('业务规则草稿已创建')
+      await load()
+    } catch (reason) {
+      notify(reason instanceof Error ? reason.message : '草稿创建失败', 'error')
+    } finally {
+      setSaving('')
+    }
+  }
+
+  function installSkill(name: string, prompt: string) {
+    if (draftPrompt.includes(prompt.split('\n')[0])) {
+      notify(`${name} 已在当前规则中`)
+      return
+    }
+    setDraftPrompt((current) => `${current.trim()}\n\n${prompt}`.trim())
+    notify(`${name} 已加入编辑区，请保存草稿并发布后生效`)
+  }
+
+  async function publishPolicy(id: string) {
+    if (!window.confirm('发布后所有新对话请求会立即使用该业务规则，确定继续吗？')) return
+    setSaving(`policy:${id}`)
+    try {
+      await adminApi.publishAssistantPolicy(id)
+      notify('业务规则已发布')
+      await load()
+    } catch (reason) {
+      notify(reason instanceof Error ? reason.message : '规则发布失败', 'error')
+    } finally {
+      setSaving('')
+    }
+  }
+
+  const permissionValue = (value: string): boolean | null => value === 'inherit' ? null : value === 'allow'
+
+  async function saveOverride() {
+    if (!/^\d+$/.test(overrideUserId) || Number(overrideUserId) <= 0) {
+      setError('请输入有效的用户 ID。')
+      return
+    }
+    setSaving('override')
+    try {
+      await adminApi.updateAiUserOverride(overrideUserId, {
+        assistantEnabled: permissionValue(overrideValues.assistantEnabled),
+        canProposeGeneration: permissionValue(overrideValues.canProposeGeneration),
+        canExecuteGeneration: permissionValue(overrideValues.canExecuteGeneration),
+        canAutoAddToProject: permissionValue(overrideValues.canAutoAddToProject),
+        maxConcurrentJobs: overrideValues.maxConcurrentJobs ? Math.max(1, Number(overrideValues.maxConcurrentJobs)) : null,
+        allowedWorkflowCodes: overrideValues.inheritWorkflows ? null : overrideValues.workflows,
+        expiresAt: overrideValues.expiresAt ? new Date(overrideValues.expiresAt).toISOString() : null,
+      })
+      notify('用户 AI 权限覆盖已保存')
+      await load()
+    } catch (reason) {
+      notify(reason instanceof Error ? reason.message : '用户权限保存失败', 'error')
+    } finally {
+      setSaving('')
+    }
+  }
+
+  async function testProvider() {
+    setSaving('provider')
+    try {
+      const result = await adminApi.testAssistantProvider()
+      notify(`模型 ${result.model} 连接正常，耗时 ${result.latencyMs} ms`)
+    } catch (reason) {
+      notify(reason instanceof Error ? reason.message : '模型连接测试失败', 'error')
+    } finally {
+      setSaving('')
+    }
+  }
+
+  async function testAgentProfile(profileId: string) {
+    setSaving(`agent-model:${profileId}`)
+    try {
+      const result = await adminApi.testAgentModelProfile(profileId)
+      notify(`${profileId} · ${result.model} 连接正常，耗时 ${result.durationMs} ms`)
+      await load()
+    } catch (reason) {
+      notify(reason instanceof Error ? reason.message : `${profileId} 连接测试失败`, 'error')
+    } finally {
+      setSaving('')
+    }
+  }
+
+  async function reloadAgentConfig() {
+    setSaving('agent-config')
+    try {
+      const result = await adminApi.reloadAgentConfiguration()
+      if (result.valid) notify('Agent 配置目录已重新加载')
+      else notify(result.validationErrors.join('；') || 'Agent 配置校验未通过', 'error')
+      await load()
+    } catch (reason) {
+      notify(reason instanceof Error ? reason.message : 'Agent 配置重新加载失败', 'error')
+    } finally {
+      setSaving('')
+    }
+  }
+
+  async function toggleRunDiagnostics(runId: number) {
+    if (selectedRun?.runId === runId) {
+      setSelectedRun(null)
+      return
+    }
+    setLoadingRunId(runId)
+    try {
+      setSelectedRun(await adminApi.getAgentRunDiagnostics(runId))
+    } catch (reason) {
+      notify(reason instanceof Error ? reason.message : '运行诊断详情加载失败', 'error')
+    } finally {
+      setLoadingRunId(0)
+    }
+  }
+
+  if (loading && !data) return <PageLoading label="正在读取 AI 治理配置…" />
+  if (!data) return <ErrorPanel message={error || 'AI 治理配置不可用'} />
+
+  return (
+    <div className="space-y-6">
+      <div className="grid gap-4 lg:grid-cols-2">
+        <section className={cn(panelClass, 'p-5')}>
+          <SectionHeader title="模型连接" description="密钥只保存在服务器环境变量中，后台不会读取或返回明文。" action={<button type="button" onClick={() => void testProvider()} disabled={saving === 'provider'} className={secondaryButtonClass}>{saving === 'provider' ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}测试连接</button>} />
+          <div className="grid grid-cols-2 gap-3 text-xs">
+            <div className="rounded-xl bg-[var(--bg-input)] p-3"><p className="text-[var(--text-tertiary)]">状态</p><div className="mt-2"><StatusBadge value={data.provider.configured ? 'Healthy' : 'Unconfigured'} /></div></div>
+            <div className="rounded-xl bg-[var(--bg-input)] p-3"><p className="text-[var(--text-tertiary)]">模型</p><p className="mt-2 break-all font-medium text-[var(--text-primary)]">{data.provider.model || '未配置'}</p></div>
+            <div className="col-span-2 rounded-xl bg-[var(--bg-input)] p-3"><p className="text-[var(--text-tertiary)]">API 地址</p><p className="mt-2 break-all text-[var(--text-secondary)]">{data.provider.baseUrl || '未配置'}</p></div>
+          </div>
+          <p className="mt-3 text-[11px] text-[var(--text-tertiary)]">上下文 {data.provider.maxContextMessages} 条 · 最大输出 {formatNumber(data.provider.maxOutputTokens)} Token · 格式 {data.provider.responseFormatMode} · 自动修复 {data.provider.repairInvalidStructuredOutput ? '开启' : '关闭'} · Key {data.provider.apiKeyConfigured ? '已配置' : '未配置'}</p>
+        </section>
+
+        <section className={cn(panelClass, 'p-5')}>
+          <SectionHeader title="不可变核心策略" description="该层只能随后端版本更新，管理员业务规则不能覆盖。" />
+          <div className="rounded-xl border border-emerald-400/20 bg-emerald-400/8 p-4">
+            <div className="flex items-center justify-between gap-3"><span className="text-sm font-semibold text-[var(--text-primary)]">Core {data.corePolicy.version}</span><StatusBadge value="Locked" /></div>
+            <p className="mt-3 text-xs leading-6 text-[var(--text-secondary)]">{data.corePolicy.summary}</p>
+          </div>
+        </section>
+      </div>
+
+      <section className={cn(panelClass, 'p-5')}>
+        <SectionHeader
+          title="多 Agent 运行基础"
+          description="显示 AIAgent 配置目录、角色映射和各模型协议的实际可用状态；此处不会返回密钥明文。"
+          action={<button type="button" onClick={() => void reloadAgentConfig()} disabled={saving === 'agent-config'} className={secondaryButtonClass}>{saving === 'agent-config' ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}重新加载配置</button>}
+        />
+        <div className="grid gap-3 md:grid-cols-4">
+          <div className="rounded-xl bg-[var(--bg-input)] p-3 text-xs"><p className="text-[var(--text-tertiary)]">平台状态</p><div className="mt-2"><StatusBadge value={data.agentPlatform.valid ? (data.agentPlatform.enabled ? 'Healthy' : 'Disabled') : 'Invalid'} /></div></div>
+          <div className="rounded-xl bg-[var(--bg-input)] p-3 text-xs"><p className="text-[var(--text-tertiary)]">配置版本</p><p className="mt-2 font-medium text-[var(--text-primary)]">{data.agentPlatform.version || '未加载'}</p></div>
+          <div className="rounded-xl bg-[var(--bg-input)] p-3 text-xs"><p className="text-[var(--text-tertiary)]">默认 Agent</p><p className="mt-2 font-medium text-[var(--text-primary)]">{data.agentPlatform.defaultAgentId || '未配置'}</p></div>
+          <div className="rounded-xl bg-[var(--bg-input)] p-3 text-xs"><p className="text-[var(--text-tertiary)]">资源</p><p className="mt-2 font-medium text-[var(--text-primary)]">{data.agentPlatform.agentCount} Agents · {data.agentPlatform.toolCount} Tools</p></div>
+        </div>
+        {data.agentPlatform.validationErrors.length > 0 && <div className="mt-3 rounded-xl border border-amber-400/25 bg-amber-400/8 p-3 text-xs text-amber-300"><div className="flex items-center gap-2 font-semibold"><AlertCircle size={14} />配置校验问题</div><ul className="mt-2 list-disc space-y-1 pl-5">{data.agentPlatform.validationErrors.map((item) => <li key={item}>{item}</li>)}</ul></div>}
+        <div className="mt-4 grid gap-3 xl:grid-cols-2">
+          {data.agentModels.map((profile) => <article key={profile.profileId} className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-input)] p-4"><div className="flex items-start justify-between gap-3"><div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><p className="text-sm font-semibold text-[var(--text-primary)]">{profile.profileId}</p><StatusBadge value={profile.configured ? 'Healthy' : profile.enabled ? 'Unconfigured' : 'Disabled'} /></div><p className="mt-1 break-all text-xs text-[var(--text-secondary)]">{profile.provider} / {profile.protocol} · {profile.model}</p></div><button type="button" disabled={!profile.configured || saving === `agent-model:${profile.profileId}`} onClick={() => void testAgentProfile(profile.profileId)} className={secondaryButtonClass}>{saving === `agent-model:${profile.profileId}` && <Loader2 size={14} className="animate-spin" />}测试</button></div><p className="mt-3 break-all text-[11px] text-[var(--text-tertiary)]">{profile.baseUrl} · 输出 {formatNumber(profile.maxOutputTokens)} Token · 思考 {profile.thinkingMode} · Key {profile.apiKeyConfigured ? '已配置' : '未配置'}</p>{profile.validationErrors.length > 0 && <p className="mt-2 text-[11px] leading-5 text-amber-300">{profile.validationErrors.join('；')}</p>}</article>)}
+        </div>
+        <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+          {data.agentPlatform.agents.map((agent) => <article key={agent.id} className="rounded-xl border border-[var(--border-subtle)] p-3"><div className="flex items-center justify-between gap-2"><p className="text-xs font-semibold text-[var(--text-primary)]">{agent.displayName || agent.id}</p><StatusBadge value={agent.mode === 'test' ? 'Test' : agent.enabled ? 'Enabled' : 'Disabled'} /></div><p className="mt-2 text-[11px] leading-5 text-[var(--text-tertiary)]">{agent.description}</p><p className="mt-2 text-[10px] text-[var(--text-tertiary)]">模型 {agent.defaultModelProfile} · Skills {agent.skillIds.length} · Tools {agent.allowedTools.length} · Handoff {agent.handoffTargets.length}</p></article>)}
+        </div>
+      </section>
+
+      <section className={cn(panelClass, 'p-5')}>
+        <SectionHeader title="Agent 运行诊断" description="最近 30 次运行的链路、耗时和失败阶段。可使用 Run ID、请求 ID 和上游请求 ID 对照服务器日志。" />
+        {data.recentAgentRuns.length === 0 ? (
+          <p className="rounded-xl bg-[var(--bg-input)] p-4 text-xs text-[var(--text-tertiary)]">暂无 Agent 运行记录。</p>
+        ) : (
+          <div className="space-y-2">
+            {data.recentAgentRuns.map((run) => {
+              const failed = run.status.toLowerCase() === 'failed'
+              return (
+                <article key={run.runId} className={cn('rounded-xl border bg-[var(--bg-input)] p-3', failed ? 'border-red-400/25' : 'border-[var(--border-subtle)]')}>
+                  <div className="flex flex-col gap-2 lg:flex-row lg:items-start lg:justify-between">
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="text-xs font-semibold text-[var(--text-primary)]">Run #{run.runId}</p>
+                        <StatusBadge value={failed ? 'Failed' : run.status} />
+                        <span className="text-[10px] text-[var(--text-tertiary)]">{run.currentAgentId || run.entryAgentId} / {run.currentStage || '-'}</span>
+                      </div>
+                      <p className="mt-1 truncate text-[11px] text-[var(--text-secondary)]">{run.username || `用户 ${run.userId}`} · {run.conversationTitle || `对话 ${run.conversationId}`} · {run.latestEvent || '无事件'}</p>
+                      {failed && <p className="mt-2 text-[11px] leading-5 text-red-300">{run.errorCode || 'agent_failed'}：{run.errorMessage || '未记录错误说明'}</p>}
+                    </div>
+                    <div className="shrink-0 text-[10px] leading-5 text-[var(--text-tertiary)] lg:text-right">
+                      <p>{formatDate(run.startedAt)} · {run.durationMs} ms</p>
+                      <p>模型 {run.modelCallCount} 次 · 转交 {run.handoffCount} 次 · Token {formatNumber(run.inputTokens + run.outputTokens)}</p>
+                    </div>
+                  </div>
+                  <div className="mt-2 grid gap-1 border-t border-[var(--border-subtle)] pt-2 font-mono text-[10px] text-[var(--text-tertiary)] md:grid-cols-2">
+                    <p className="break-all">ClientRequestId: {run.clientRequestId}</p>
+                    <div className="flex items-center justify-between gap-2"><p>ConversationId: {run.conversationId}</p><button type="button" onClick={() => void toggleRunDiagnostics(run.runId)} className="font-sans text-[var(--accent)] hover:underline">{loadingRunId === run.runId ? '加载中…' : selectedRun?.runId === run.runId ? '收起链路' : '查看链路'}</button></div>
+                  </div>
+                  {selectedRun?.runId === run.runId && (
+                    <div className="mt-3 space-y-2 border-t border-[var(--border-subtle)] pt-3">
+                      {selectedRun.events.map((event) => (
+                        <div key={event.eventId} className={cn('rounded-lg border px-3 py-2 text-[11px]', event.eventType === 'run_failed' ? 'border-red-400/25 bg-red-400/6' : 'border-[var(--border-subtle)]')}>
+                          <div className="flex flex-wrap items-center gap-2"><span className="font-mono text-[10px] text-[var(--text-tertiary)]">#{event.sequence}</span><span className="font-semibold text-[var(--text-primary)]">{event.title}</span><span className="text-[10px] text-[var(--text-tertiary)]">{event.agentId} / {event.stage || event.eventType}</span></div>
+                          {event.detail && <p className="mt-1 leading-5 text-[var(--text-secondary)]">{event.detail}</p>}
+                          {event.dataJson && <pre className="mt-2 overflow-x-auto whitespace-pre-wrap break-all rounded bg-black/10 p-2 text-[10px] leading-4 text-[var(--text-tertiary)]">{event.dataJson}</pre>}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </article>
+              )
+            })}
+          </div>
+        )}
+      </section>
+
+      <section className={cn(panelClass, 'p-5')}>
+        <SectionHeader title="Agent 业务规则" description="先创建草稿，测试确认后发布；重新发布旧版本即可回滚。" action={<button type="button" onClick={() => void createDraft()} disabled={saving === 'draft'} className={primaryButtonClass}>{saving === 'draft' && <Loader2 size={14} className="animate-spin" />}保存为新草稿</button>} />
+        <div className="mb-5 rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-input)] p-4">
+          <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between"><div><p className="text-sm font-semibold text-[var(--text-primary)]">受控技能模板</p><p className="mt-1 text-xs leading-5 text-[var(--text-tertiary)]">技能是由管理员发布的规则模块，不执行外部代码，也不能覆盖后端安全策略。点击安装后仍需保存草稿并发布。</p></div></div>
+          <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+            {ASSISTANT_SKILL_TEMPLATES.map((skill) => { const installed = draftPrompt.includes(`[技能：${skill.name}]`); return <article key={skill.code} className="flex flex-col rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-card)] p-3"><div className="flex items-center justify-between gap-2"><p className="text-xs font-semibold text-[var(--text-primary)]">{skill.name}</p>{installed && <StatusBadge value="Installed" />}</div><p className="mt-2 flex-1 text-[11px] leading-5 text-[var(--text-tertiary)]">{skill.description}</p><button type="button" disabled={installed} onClick={() => installSkill(skill.name, skill.prompt)} className={cn(secondaryButtonClass, 'mt-3 w-full')}>{installed ? '已加入编辑区' : '安装到当前规则'}</button></article> })}
+          </div>
+        </div>
+        <div className="grid gap-3 lg:grid-cols-[260px_1fr]">
+          <label className="text-xs text-[var(--text-secondary)]">版本名称<input value={draftName} onChange={(event) => setDraftName(event.target.value)} className={cn(inputClass, 'mt-1.5')} /></label>
+          <label className="text-xs text-[var(--text-secondary)]">业务规则<textarea value={draftPrompt} onChange={(event) => setDraftPrompt(event.target.value)} rows={6} className={cn(inputClass, 'mt-1.5 resize-y leading-6')} /></label>
+        </div>
+        <div className="mt-5 space-y-2">
+          {data.policyVersions.map((version) => <div key={version.policyVersionId} className="flex flex-col gap-3 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-input)] p-3 sm:flex-row sm:items-center sm:justify-between"><div className="min-w-0"><div className="flex items-center gap-2"><p className="text-xs font-semibold text-[var(--text-primary)]">v{version.versionNumber} · {version.name}</p>{version.isPublished && <StatusBadge value="Published" />}</div><p className="mt-1 truncate text-[11px] text-[var(--text-tertiary)]">{version.businessPrompt}</p><p className="mt-1 text-[10px] text-[var(--text-tertiary)]">创建 {formatDate(version.createdAt)}</p></div><button type="button" disabled={version.isPublished || saving === `policy:${version.policyVersionId}`} onClick={() => void publishPolicy(version.policyVersionId)} className={secondaryButtonClass}>{saving === `policy:${version.policyVersionId}` && <Loader2 size={14} className="animate-spin" />}{version.isPublished ? '当前版本' : '发布/回滚'}</button></div>)}
+        </div>
+      </section>
+
+      <section className={cn(panelClass, 'p-5')}>
+        <SectionHeader title="角色 AI 权限" description="工作流全不勾选表示允许所有已启用工作流。" />
+        <div className="grid gap-4 xl:grid-cols-2">
+          {data.rolePolicies.map((policy) => <div key={policy.role} className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-input)] p-4"><div className="flex items-center justify-between"><p className="text-sm font-semibold text-[var(--text-primary)]">{policy.role}</p><button type="button" disabled={saving === `role:${policy.role}`} onClick={() => void saveRole(policy)} className={secondaryButtonClass}>{saving === `role:${policy.role}` && <Loader2 size={14} className="animate-spin" />}保存</button></div><div className="mt-4 grid gap-2 text-xs sm:grid-cols-2">{[
+            ['assistantEnabled', '允许助手聊天'], ['canProposeGeneration', '允许提出生图建议'], ['canExecuteGeneration', '允许执行生图'], ['canAutoAddToProject', '允许自动加入方案'],
+          ].map(([key, label]) => <label key={key} className="flex items-center gap-2 rounded-lg border border-[var(--border-subtle)] px-3 py-2 text-[var(--text-secondary)]"><input type="checkbox" checked={Boolean(policy[key as keyof AdminAiRolePolicy])} onChange={(event) => patchRole(policy.role, { [key]: event.target.checked })} />{label}</label>)}</div><label className="mt-3 block text-xs text-[var(--text-secondary)]">最大并发任务<input type="number" min={1} max={100} value={policy.maxConcurrentJobs} onChange={(event) => patchRole(policy.role, { maxConcurrentJobs: Math.max(1, Number(event.target.value)) })} className={cn(inputClass, 'mt-1.5')} /></label><div className="mt-3"><p className="text-xs text-[var(--text-secondary)]">允许的工作流</p><div className="mt-2 flex flex-wrap gap-2">{data.workflows.map((workflow) => { const checked = policy.allowedWorkflowCodes.includes(workflow.workflowCode); return <label key={workflow.workflowCode} className="flex items-center gap-2 rounded-lg border border-[var(--border-subtle)] px-2.5 py-2 text-[11px] text-[var(--text-secondary)]"><input type="checkbox" checked={checked} onChange={() => patchRole(policy.role, { allowedWorkflowCodes: checked ? policy.allowedWorkflowCodes.filter((item) => item !== workflow.workflowCode) : [...policy.allowedWorkflowCodes, workflow.workflowCode] })} />{workflow.name || workflow.workflowCode}</label> })}</div></div></div>)}
+        </div>
+      </section>
+
+      <section className={cn(panelClass, 'p-5')}>
+        <SectionHeader title="用户级权限覆盖" description="留空或选择“继承角色”时继续使用角色配置；可设置自动过期时间。" action={<button type="button" disabled={saving === 'override'} onClick={() => void saveOverride()} className={primaryButtonClass}>{saving === 'override' && <Loader2 size={14} className="animate-spin" />}保存覆盖</button>} />
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <label className="text-xs text-[var(--text-secondary)]">用户 ID<input value={overrideUserId} onChange={(event) => setOverrideUserId(event.target.value)} className={cn(inputClass, 'mt-1.5')} placeholder="例如 12" /></label>
+          {[
+            ['assistantEnabled', '助手聊天'], ['canProposeGeneration', '提出生图建议'], ['canExecuteGeneration', '执行生图'], ['canAutoAddToProject', '自动加入方案'],
+          ].map(([key, label]) => <label key={key} className="text-xs text-[var(--text-secondary)]">{label}<select value={overrideValues[key as keyof typeof overrideValues] as string} onChange={(event) => setOverrideValues((value) => ({ ...value, [key]: event.target.value }))} className={cn(inputClass, 'mt-1.5')}><option value="inherit">继承角色</option><option value="allow">允许</option><option value="deny">禁止</option></select></label>)}
+          <label className="text-xs text-[var(--text-secondary)]">最大并发（空为继承）<input type="number" min={1} value={overrideValues.maxConcurrentJobs} onChange={(event) => setOverrideValues((value) => ({ ...value, maxConcurrentJobs: event.target.value }))} className={cn(inputClass, 'mt-1.5')} /></label>
+          <label className="text-xs text-[var(--text-secondary)]">自动过期时间<input type="datetime-local" value={overrideValues.expiresAt} onChange={(event) => setOverrideValues((value) => ({ ...value, expiresAt: event.target.value }))} className={cn(inputClass, 'mt-1.5')} /></label>
+        </div>
+        <label className="mt-4 flex items-center gap-2 text-xs text-[var(--text-secondary)]"><input type="checkbox" checked={overrideValues.inheritWorkflows} onChange={(event) => setOverrideValues((value) => ({ ...value, inheritWorkflows: event.target.checked }))} />工作流继承角色配置</label>
+        {!overrideValues.inheritWorkflows && <div className="mt-3 flex flex-wrap gap-2">{data.workflows.map((workflow) => { const checked = overrideValues.workflows.includes(workflow.workflowCode); return <label key={workflow.workflowCode} className="flex items-center gap-2 rounded-lg border border-[var(--border-subtle)] px-2.5 py-2 text-[11px] text-[var(--text-secondary)]"><input type="checkbox" checked={checked} onChange={() => setOverrideValues((value) => ({ ...value, workflows: checked ? value.workflows.filter((item) => item !== workflow.workflowCode) : [...value.workflows, workflow.workflowCode] }))} />{workflow.name || workflow.workflowCode}</label> })}</div>}
+        {data.userOverrides.length > 0 && <div className="mt-5 space-y-2">{data.userOverrides.map((item) => <div key={item.userPolicyOverrideId} className="flex items-center justify-between gap-3 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-input)] p-3"><div><p className="text-xs font-medium text-[var(--text-primary)]">{item.username} · ID {item.userId}</p><p className="mt-1 text-[11px] text-[var(--text-tertiary)]">{item.expiresAt ? `有效至 ${formatDate(item.expiresAt)}` : '长期有效'} · 并发 {item.maxConcurrentJobs ?? '继承'}</p></div><button type="button" onClick={() => { if (window.confirm('确定删除该用户的 AI 权限覆盖吗？')) void adminApi.deleteAiUserOverride(item.userId).then(() => { notify('用户权限覆盖已删除'); return load() }).catch((reason) => notify(reason instanceof Error ? reason.message : '删除失败', 'error')) }} className="rounded-lg p-2 text-red-300 hover:bg-red-400/10"><Trash2 size={15} /></button></div>)}</div>}
+        {error && <p className="mt-3 text-xs text-red-300">{error}</p>}
+      </section>
+    </div>
+  )
+}
+
 function SystemPanel({ refreshKey }: { refreshKey: number }) {
   const [system, setSystem] = useState<AdminSystemInfo | null>(null)
   const [apis, setApis] = useState<AdminApiEndpoint[]>([])
@@ -953,7 +1303,7 @@ export default function AdminPage() {
         </div>
         <div className="mx-auto max-w-[1600px] overflow-x-auto px-4 sm:px-6 lg:px-8"><nav className="flex min-w-max gap-1">{TAB_ITEMS.map((item) => { const Icon = item.icon; return <button key={item.key} onClick={() => setTab(item.key)} className={cn('flex items-center gap-2 border-b-2 px-3 py-3 text-xs font-medium', tab === item.key ? 'border-[var(--accent)] text-[var(--text-primary)]' : 'border-transparent text-[var(--text-tertiary)] hover:text-[var(--text-primary)]')}><Icon size={14} />{item.label}</button> })}</nav></div>
       </header>
-      <main className="mx-auto max-w-[1600px] p-4 sm:p-6 lg:p-8">{tab === 'overview' && <OverviewPanel refreshKey={refreshKey} />}{tab === 'users' && <UsersPanel refreshKey={refreshKey} notify={notify} />}{tab === 'gallery' && <GalleryPanel notify={notify} />}{tab === 'system' && <SystemPanel refreshKey={refreshKey} />}{tab === 'audit' && <AuditPanel refreshKey={refreshKey} />}</main>
+      <main className="mx-auto max-w-[1600px] p-4 sm:p-6 lg:p-8">{tab === 'overview' && <OverviewPanel refreshKey={refreshKey} />}{tab === 'users' && <UsersPanel refreshKey={refreshKey} notify={notify} />}{tab === 'gallery' && <GalleryPanel notify={notify} />}{tab === 'ai' && <AiGovernancePanel notify={notify} />}{tab === 'system' && <SystemPanel refreshKey={refreshKey} />}{tab === 'audit' && <AuditPanel refreshKey={refreshKey} />}</main>
       {toast && <div className={cn('fixed bottom-5 right-5 z-[120] flex max-w-sm items-center gap-2 rounded-xl border px-4 py-3 text-sm shadow-2xl animate-soft-pop', toast.type === 'success' ? 'border-emerald-400/25 bg-[#10251f] text-emerald-200' : 'border-red-400/25 bg-[#2a1518] text-red-200')}>{toast.type === 'success' ? <CheckCircle2 size={17} /> : <CircleOff size={17} />}<span>{toast.message}</span></div>}
     </div>
   )

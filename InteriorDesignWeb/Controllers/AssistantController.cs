@@ -14,10 +14,14 @@ namespace InteriorDesignWeb.Controllers;
 public sealed class AssistantController : ControllerBase
 {
     private readonly IAssistantService _assistantService;
+    private readonly IAssistantAttachmentService _attachmentService;
 
-    public AssistantController(IAssistantService assistantService)
+    public AssistantController(
+        IAssistantService assistantService,
+        IAssistantAttachmentService attachmentService)
     {
         _assistantService = assistantService;
+        _attachmentService = attachmentService;
     }
 
     [HttpPost("conversations")]
@@ -72,8 +76,48 @@ public sealed class AssistantController : ControllerBase
         SendMessage(request.ConversationId, new SendAssistantMessageRequest
         {
             Content = request.Content,
-            ClientRequestId = request.ClientRequestId
+            ClientRequestId = request.ClientRequestId,
+            AttachmentIds = request.AttachmentIds
         }, cancellationToken);
+
+    [HttpPost("conversations/{conversationId:long}/attachments")]
+    [Consumes("multipart/form-data")]
+    [RequestSizeLimit(16 * 1024 * 1024)]
+    public async Task<ActionResult<ApiResponse<AssistantAttachmentDto>>> UploadAttachment(
+        long conversationId,
+        [FromForm] UploadAssistantAttachmentRequest request,
+        CancellationToken cancellationToken)
+    {
+        var result = await _attachmentService.UploadAsync(
+            GetUserId(), conversationId, request.RoomId, request.File, cancellationToken);
+        return Ok(ApiResponse<AssistantAttachmentDto>.Ok(
+            result, "图片已上传，发送消息后将由视觉 Agent 分析。", HttpContext.TraceIdentifier));
+    }
+
+    [HttpGet("conversations/{conversationId:long}/attachments/{attachmentId:long}/file")]
+    public async Task<IActionResult> GetAttachmentFile(
+        long conversationId,
+        long attachmentId,
+        [FromQuery] string type = "thumbnail",
+        CancellationToken cancellationToken = default)
+    {
+        var result = await _attachmentService.OpenAsync(
+            GetUserId(), conversationId, attachmentId,
+            type.Equals("thumbnail", StringComparison.OrdinalIgnoreCase),
+            cancellationToken);
+        return File(result.Stream, result.ContentType, enableRangeProcessing: true);
+    }
+
+    [HttpDelete("conversations/{conversationId:long}/attachments/{attachmentId:long}")]
+    public async Task<IActionResult> DeleteAttachment(
+        long conversationId,
+        long attachmentId,
+        CancellationToken cancellationToken)
+    {
+        await _attachmentService.DeleteAsync(
+            GetUserId(), conversationId, attachmentId, cancellationToken);
+        return NoContent();
+    }
 
     [HttpPost("conversations/{conversationId:long}/actions/{actionId:long}/execute")]
     public async Task<ActionResult<ApiResponse<AssistantGenerationResponseDto>>> ExecuteGeneration(
@@ -84,6 +128,34 @@ public sealed class AssistantController : ControllerBase
     {
         var result = await _assistantService.ExecuteGenerationAsync(GetUserId(), conversationId, actionId, request, cancellationToken);
         return Ok(ApiResponse<AssistantGenerationResponseDto>.Ok(result, "AI 任务已提交", HttpContext.TraceIdentifier));
+    }
+
+    [HttpPost("conversations/{conversationId:long}/actions/{actionId:long}/evaluate")]
+    [EnableRateLimiting("assistant")]
+    public async Task<ActionResult<ApiResponse<AssistantResultEvaluationDto>>> EvaluateGeneration(
+        long conversationId,
+        long actionId,
+        [FromBody] EvaluateAssistantResultRequest request,
+        CancellationToken cancellationToken)
+    {
+        var result = await _assistantService.EvaluateGenerationAsync(
+            GetUserId(), conversationId, actionId, request, cancellationToken);
+        return Ok(ApiResponse<AssistantResultEvaluationDto>.Ok(
+            result, "效果图评估完成", HttpContext.TraceIdentifier));
+    }
+
+    [HttpGet("conversations/{conversationId:long}/agent-runs/by-request/{clientRequestId}")]
+    public async Task<ActionResult<ApiResponse<AssistantAgentRunDto>>> GetAgentRun(
+        long conversationId,
+        string clientRequestId,
+        CancellationToken cancellationToken)
+    {
+        var result = await _assistantService.GetAgentRunAsync(
+            GetUserId(),
+            conversationId,
+            clientRequestId,
+            cancellationToken);
+        return Ok(ApiResponse<AssistantAgentRunDto>.Ok(result, "查询成功", HttpContext.TraceIdentifier));
     }
 
     [HttpDelete("conversations/{conversationId:long}")]

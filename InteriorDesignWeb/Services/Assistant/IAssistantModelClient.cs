@@ -9,12 +9,15 @@ public sealed record AssistantModelResult(
     string Model,
     int InputTokens,
     int OutputTokens,
-    int DurationMs);
+    int DurationMs,
+    string OutputMode,
+    string? ProviderRequestId);
 
 public interface IAssistantModelClient
 {
     Task<AssistantModelResult> CompleteAsync(
         AssistantBriefDto currentBrief,
         IReadOnlyList<AssistantModelMessage> messages,
+        string businessPrompt,
         CancellationToken cancellationToken = default);
 }

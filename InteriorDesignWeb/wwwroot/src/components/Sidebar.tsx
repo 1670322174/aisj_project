@@ -511,6 +511,8 @@ function RecentTasks({ collapsed, enabled }: { collapsed: boolean; enabled: bool
 ───────────────────────────────────────── */
 export function Sidebar() {
   const [collapsed, setCollapsed] = useState(false)
+  const location = useLocation()
+  const wasAssistantRoute = useRef(false)
   const {
     resolvedTheme,
     toggleTheme,
@@ -520,6 +522,12 @@ export function Sidebar() {
     authUser,
   } = useAppStore()
   const navigate = useNavigate()
+
+  useEffect(() => {
+    const isAssistantRoute = location.pathname.startsWith('/app/assistant')
+    if (isAssistantRoute && !wasAssistantRoute.current) setCollapsed(true)
+    wasAssistantRoute.current = isAssistantRoute
+  }, [location.pathname])
 
   return (
     <aside

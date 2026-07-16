@@ -5,6 +5,7 @@ using System.Security.Claims;
 using InteriorDesignWeb.Application.Common;
 using InteriorDesignWeb.Models.DTOs.AI;
 using InteriorDesignWeb.Services.AI;
+using InteriorDesignWeb.Services.Assistant;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -16,19 +17,29 @@ namespace InteriorDesignWeb.Controllers;
 public class AIGenerationsController : ControllerBase
 {
     private readonly IAIGenerationService _generationService;
+    private readonly IAssistantGovernanceService _governanceService;
 
-    public AIGenerationsController(IAIGenerationService generationService)
+    public AIGenerationsController(
+        IAIGenerationService generationService,
+        IAssistantGovernanceService governanceService)
     {
         _generationService = generationService;
+        _governanceService = governanceService;
     }
 
     /// <summary>
     /// 获取当前可用的 7 个 AI 工作流及其输入要求。
     /// </summary>
     [HttpGet("options")]
-    public ActionResult<ApiResponse<IReadOnlyList<WorkflowOptionDto>>> GetOptions()
+    public async Task<ActionResult<ApiResponse<IReadOnlyList<WorkflowOptionDto>>>> GetOptions(
+        CancellationToken cancellationToken)
     {
-        var options = _generationService.GetWorkflowOptions();
+        var policy = await _governanceService.GetEffectivePolicyAsync(GetCurrentUserId(), cancellationToken);
+        var options = _generationService.GetWorkflowOptions()
+            .Where(item => policy.CanExecuteGeneration
+                && (policy.AllowedWorkflowCodes.Count == 0
+                    || policy.AllowedWorkflowCodes.Contains(item.WorkflowCode)))
+            .ToList();
         return Ok(ApiResponse<IReadOnlyList<WorkflowOptionDto>>.Ok(
             options,
             "查询成功",
@@ -47,6 +58,9 @@ public class AIGenerationsController : ControllerBase
         [FromForm] bool overwrite = true,
         CancellationToken cancellationToken = default)
     {
+        var policy = await _governanceService.GetEffectivePolicyAsync(GetCurrentUserId(), cancellationToken);
+        if (!policy.CanExecuteGeneration)
+            throw AppException.Forbidden("管理员已禁止当前账号使用 AI 生图。");
         var result = await _generationService.UploadInputImageAsync(
             file,
             fieldName,

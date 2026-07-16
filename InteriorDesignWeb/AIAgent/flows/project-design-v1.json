@@ -1,0 +1,19 @@
+{
+  "id": "project-design-v1",
+  "version": "1.0.0",
+  "states": [
+    "project_setup",
+    "collecting_project_requirements",
+    "project_brief_ready",
+    "design_direction_waiting_confirmation",
+    "room_planning",
+    "room_waiting_confirmation",
+    "room_generating",
+    "room_review",
+    "room_revision",
+    "room_approved",
+    "project_review",
+    "completed"
+  ],
+  "terminalStates": ["completed", "cancelled", "failed"]
+}
